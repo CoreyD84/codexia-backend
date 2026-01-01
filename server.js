@@ -65,6 +65,10 @@ Transformed Swift/SwiftUI Code:`;
     });
 
     // Extract transformed code
+    if (!completion.choices || completion.choices.length === 0) {
+      throw new Error('No response from OpenAI API');
+    }
+    
     const transformedCode = completion.choices[0].message.content.trim();
 
     // Return only the transformed code
