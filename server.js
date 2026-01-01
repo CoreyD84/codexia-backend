@@ -12,7 +12,7 @@ const multer = require('multer');
 
 // Import utilities
 const logger = require('./utils/logger');
-const { handleZipUpload, handleGitHubUrl, chunkFiles } = require('./utils/fileHandlers');
+const { handleZipUpload, handleGitHubUrl, chunkFiles, MAX_FILE_SIZE } = require('./utils/fileHandlers');
 const { handleSingleFile, transformMultipleFiles } = require('./utils/transformers');
 const { streamTransformedCode, streamMultipleTransformations } = require('./utils/streamingHelpers');
 const { runCodexiaTransform, buildUserPrompt } = require('./openaiClient');
@@ -24,7 +24,7 @@ const PORT = process.env.PORT || 3000;
 const upload = multer({
   storage: multer.memoryStorage(),
   limits: {
-    fileSize: 10 * 1024 * 1024 // 10MB limit
+    fileSize: MAX_FILE_SIZE // Use constant from fileHandlers.js
   },
   fileFilter: (req, file, cb) => {
     const allowedMimeTypes = [

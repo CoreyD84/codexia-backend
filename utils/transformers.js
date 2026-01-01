@@ -8,9 +8,20 @@
  * for actual code transformations.
  */
 
-const { runCodexiaTransform, buildUserPrompt } = require('../openaiClient');
+const { runCodexiaTransform, buildUserPrompt, isOpenAIConfigured } = require('../openaiClient');
 const { isKotlinCode } = require('./fileHandlers');
 const logger = require('./logger');
+
+/**
+ * Get transformation note based on OpenAI configuration
+ * 
+ * @returns {string} Note about transformation mode
+ */
+function getTransformationNote() {
+  return isOpenAIConfigured()
+    ? 'Transformed using OpenAI API'
+    : 'Mock transformation (configure OPENAI_API_KEY for actual transformations)';
+}
 
 /**
  * Transform a single file's code
@@ -42,9 +53,7 @@ async function handleSingleFile(code, instructions) {
       transformedCode: transformedCode,
       language: language,
       targetLanguage: 'SwiftUI',
-      note: process.env.OPENAI_API_KEY 
-        ? 'Transformed using OpenAI API' 
-        : 'Mock transformation (configure OPENAI_API_KEY for actual transformations)'
+      note: getTransformationNote()
     };
   } catch (error) {
     logger.error(`Single file transformation error: ${error.message}`);
@@ -81,9 +90,7 @@ async function transformKotlinToSwiftUI(kotlinCode, instructions) {
       language: 'Kotlin',
       targetLanguage: 'SwiftUI',
       transformations: extractKotlinTransformations(kotlinCode),
-      note: process.env.OPENAI_API_KEY 
-        ? 'Transformed using OpenAI API' 
-        : 'Mock transformation (configure OPENAI_API_KEY for actual transformations)'
+      note: getTransformationNote()
     };
   } catch (error) {
     logger.error(`Kotlin to SwiftUI transformation error: ${error.message}`);

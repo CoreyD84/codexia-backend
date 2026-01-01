@@ -16,6 +16,14 @@ const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY || ''
 });
 
+// Default model - can be overridden via environment variable
+const DEFAULT_MODEL = process.env.OPENAI_MODEL || 'gpt-4o';
+
+// Check if OpenAI API key is configured
+const isOpenAIConfigured = () => {
+  return !!process.env.OPENAI_API_KEY;
+};
+
 /**
  * Run a Codexia code transformation using OpenAI
  * 
@@ -25,7 +33,7 @@ const openai = new OpenAI({
  * @param {string} userPrompt - The user's instructions and code to transform
  * @param {Object} options - Configuration options
  * @param {boolean} options.stream - Whether to stream the response (default: false)
- * @param {string} options.model - OpenAI model to use (default: gpt-4-turbo-preview)
+ * @param {string} options.model - OpenAI model to use (default: from env or gpt-4o)
  * @param {number} options.temperature - Temperature for generation (default: 0.3)
  * @param {number} options.maxTokens - Maximum tokens to generate (default: 4096)
  * @returns {Promise<string|ReadableStream>} The transformed code or a stream
@@ -34,14 +42,14 @@ const openai = new OpenAI({
 async function runCodexiaTransform(userPrompt, options = {}) {
   const {
     stream = false,
-    model = 'gpt-4-turbo-preview',
+    model = DEFAULT_MODEL,
     temperature = 0.3,
     maxTokens = 4096
   } = options;
 
   try {
     // Check if API key is configured
-    if (!process.env.OPENAI_API_KEY) {
+    if (!isOpenAIConfigured()) {
       logger.warn('OpenAI API key not configured, returning mock response');
       return generateMockResponse(userPrompt);
     }
@@ -209,5 +217,6 @@ module.exports = {
   runCodexiaTransform,
   collectStreamResponse,
   buildUserPrompt,
-  generateMockResponse
+  generateMockResponse,
+  isOpenAIConfigured
 };
