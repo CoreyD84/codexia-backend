@@ -1,3 +1,11 @@
+/**
+ * Codexia Backend Server
+ * 
+ * Main Express server for code transformation service.
+ * Orchestrates multi-format inputs (JSON, zip, GitHub URLs) and
+ * integrates with OpenAI for Kotlin→SwiftUI transformations.
+ */
+
 const express = require('express');
 const cors = require('cors');
 const multer = require('multer');
@@ -7,6 +15,7 @@ const logger = require('./utils/logger');
 const { handleZipUpload, handleGitHubUrl, chunkFiles } = require('./utils/fileHandlers');
 const { handleSingleFile, transformMultipleFiles } = require('./utils/transformers');
 const { streamTransformedCode, streamMultipleTransformations } = require('./utils/streamingHelpers');
+const { runCodexiaTransform, buildUserPrompt } = require('./openaiClient');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -262,136 +271,6 @@ app.use((error, req, res, next) => {
     error: 'Internal server error',
     details: process.env.NODE_ENV === 'development' ? error.message : 'Please try again later'
   });
-});
-
-// Health check endpoint
-app.get('/health', (req, res) => {
-  res.json({ status: 'healthy', timestamp: new Date().toISOString() });
-});
-
-// Transform code endpoint - main endpoint with multi-format support
-app.post('/transformCode', upload.single('file'), async (req, res) => {
-  const startTime = Date.now();
-  
-  try {
-    logger.info('Received transformation request');
-
-    // Case 1: Multipart file upload (zip)
-    if (req.file) {
-      logger.info(`Processing zip file: ${req.file.originalname}`);
-      
-      try {
-        const files = await handleZipUpload(req.file);
-        const instructions = req.body.instructions || 'Convert to SwiftUI';
-        
-        logger.info(`Extracted ${files.length} files from zip`);
-        
-        const results = await transformMultipleFiles(files, instructions);
-        
-        const duration = Date.now() - startTime;
-        logger.info(`Transformation completed in ${duration}ms`);
-        
-        return res.json({
-          success: true,
-          message: 'Zip file processed successfully',
-          filesProcessed: files.length,
-          results: results,
-          duration: `${duration}ms`
-        });
-      } catch (error) {
-        logger.error(`Zip processing error: ${error.message}`);
-        return res.status(400).json({
-          success: false,
-          error: error.message,
-          details: 'Failed to process zip file upload'
-        });
-      }
-    }
-
-    // Case 2: GitHub URL
-    if (req.body.githubUrl) {
-      logger.info(`Processing GitHub URL: ${req.body.githubUrl}`);
-      
-      try {
-        const files = await handleGitHubUrl(req.body.githubUrl);
-        const instructions = req.body.instructions || 'Convert to SwiftUI';
-        
-        logger.info(`Downloaded ${files.length} files from GitHub`);
-        
-        const results = await transformMultipleFiles(files, instructions);
-        
-        const duration = Date.now() - startTime;
-        logger.info(`Transformation completed in ${duration}ms`);
-        
-        return res.json({
-          success: true,
-          message: 'GitHub repository processed successfully',
-          filesProcessed: files.length,
-          results: results,
-          duration: `${duration}ms`
-        });
-      } catch (error) {
-        logger.error(`GitHub processing error: ${error.message}`);
-        return res.status(400).json({
-          success: false,
-          error: error.message,
-          details: 'Failed to process GitHub repository'
-        });
-      }
-    }
-
-    // Case 3: Single file JSON (backward compatible)
-    const { code, instructions } = req.body;
-
-    // Validation
-    if (!code || typeof code !== 'string') {
-      logger.warn('Invalid request: missing or invalid code field');
-      return res.status(400).json({
-        success: false,
-        error: 'Invalid request: "code" field is required and must be a string',
-        details: 'Please provide code to transform'
-      });
-    }
-
-    if (!instructions || typeof instructions !== 'string') {
-      logger.warn('Invalid request: missing or invalid instructions field');
-      return res.status(400).json({
-        success: false,
-        error: 'Invalid request: "instructions" field is required and must be a string',
-        details: 'Please provide transformation instructions'
-      });
-    }
-
-    logger.info('Processing single file transformation');
-    
-    try {
-      const result = await handleSingleFile(code, instructions);
-      
-      const duration = Date.now() - startTime;
-      logger.info(`Transformation completed in ${duration}ms`);
-      
-      return res.json({
-        success: true,
-        message: 'Code transformation completed',
-        ...result,
-        duration: `${duration}ms`
-      });
-    } catch (error) {
-      logger.error(`Transformation error: ${error.message}`);
-      return res.status(500).json({
-        success: false,
-        error: 'Transformation failed',
-        details: error.message
-      });
-    }
-  } catch (error) {
-    logger.error(`Unexpected error in /transformCode: ${error.message}`, { stack: error.stack });
-    return res.status(500).json({
-      success: false,
-      error: 'An unexpected error occurred',
-      details: process.env.NODE_ENV === 'development' ? error.message : 'Please try again later'
-    });
-  }
 });
 
 // Start server

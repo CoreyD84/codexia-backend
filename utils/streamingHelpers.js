@@ -87,32 +87,49 @@ function closeSSEConnection(res) {
 }
 
 /**
+ * Stream code chunks with configurable delay
+ * 
+ * @param {Object} res - Express response object
+ * @param {string} code - Code to stream
+ * @param {number} chunkSize - Size of each chunk
+ * @param {number} delayMs - Delay between chunks in milliseconds (0 for no delay)
+ * @returns {Promise<number>} Number of chunks sent
+ */
+async function streamCodeChunks(res, code, chunkSize = 100, delayMs = 0) {
+  const chunks = [];
+  for (let i = 0; i < code.length; i += chunkSize) {
+    chunks.push(code.substring(i, i + chunkSize));
+  }
+
+  for (let i = 0; i < chunks.length; i++) {
+    if (delayMs > 0) {
+      await new Promise(resolve => setTimeout(resolve, delayMs));
+    }
+    sendCodeChunk(res, chunks[i], i + 1, chunks.length);
+  }
+
+  return chunks.length;
+}
+
+/**
  * Stream transformed code to client
  * 
  * @param {Object} res - Express response object
  * @param {string} transformedCode - The code to stream
  * @param {number} chunkSize - Size of each chunk (default: 100 characters)
+ * @param {number} delayMs - Delay between chunks in milliseconds (default: 0 for no artificial delay)
  * @returns {Promise<void>}
  */
-async function streamTransformedCode(res, transformedCode, chunkSize = 100) {
+async function streamTransformedCode(res, transformedCode, chunkSize = 100, delayMs = 0) {
   try {
     setupSSEConnection(res);
 
-    // Split code into chunks
-    const chunks = [];
-    for (let i = 0; i < transformedCode.length; i += chunkSize) {
-      chunks.push(transformedCode.substring(i, i + chunkSize));
-    }
-
-    // Stream each chunk with a small delay to simulate progressive generation
-    for (let i = 0; i < chunks.length; i++) {
-      await new Promise(resolve => setTimeout(resolve, 50)); // 50ms delay between chunks
-      sendCodeChunk(res, chunks[i], i + 1, chunks.length);
-    }
+    // Stream code chunks
+    const totalChunks = await streamCodeChunks(res, transformedCode, chunkSize, delayMs);
 
     // Send completion message
     sendCompletion(res, {
-      totalChunks: chunks.length,
+      totalChunks: totalChunks,
       totalCharacters: transformedCode.length
     });
 
@@ -128,9 +145,11 @@ async function streamTransformedCode(res, transformedCode, chunkSize = 100) {
  * 
  * @param {Object} res - Express response object
  * @param {Array} transformResults - Array of transformation results
+ * @param {number} chunkSize - Size of each chunk (default: 100 characters)
+ * @param {number} delayMs - Delay between chunks in milliseconds (default: 0)
  * @returns {Promise<void>}
  */
-async function streamMultipleTransformations(res, transformResults) {
+async function streamMultipleTransformations(res, transformResults, chunkSize = 100, delayMs = 0) {
   try {
     setupSSEConnection(res);
 
@@ -147,18 +166,7 @@ async function streamMultipleTransformations(res, transformResults) {
 
       if (result.success) {
         // Stream the transformed code for this file
-        const chunks = [];
-        const chunkSize = 100;
-        const code = result.transformedCode;
-
-        for (let j = 0; j < code.length; j += chunkSize) {
-          chunks.push(code.substring(j, j + chunkSize));
-        }
-
-        for (let j = 0; j < chunks.length; j++) {
-          await new Promise(resolve => setTimeout(resolve, 50));
-          sendCodeChunk(res, chunks[j], j + 1, chunks.length);
-        }
+        await streamCodeChunks(res, result.transformedCode, chunkSize, delayMs);
 
         // Send file completion
         sendSSEMessage(res, {
@@ -230,6 +238,7 @@ module.exports = {
   sendCompletion,
   sendError,
   closeSSEConnection,
+  streamCodeChunks,
   streamTransformedCode,
   streamMultipleTransformations,
   streamProgress

@@ -3,13 +3,14 @@
  * 
  * Functions for transforming code between languages,
  * with specialized logic for Kotlin to SwiftUI conversion.
+ * 
+ * This module now integrates with OpenAI via the openaiClient
+ * for actual code transformations.
  */
 
-const { 
-  generateKotlinToSwiftUIPrompt, 
-  generateGeneralTransformPrompt 
-} = require('./promptTemplates');
+const { runCodexiaTransform, buildUserPrompt } = require('../openaiClient');
 const { isKotlinCode } = require('./fileHandlers');
+const logger = require('./logger');
 
 /**
  * Transform a single file's code
@@ -22,28 +23,31 @@ async function handleSingleFile(code, instructions) {
   try {
     // Detect if code is Kotlin
     const isKotlin = isKotlinCode(code);
+    const language = isKotlin ? 'Kotlin' : 'Unknown';
 
-    // Generate appropriate prompt
-    const prompt = isKotlin 
-      ? generateKotlinToSwiftUIPrompt(code, instructions)
-      : generateGeneralTransformPrompt(code, instructions);
+    logger.info(`Transforming single file (detected language: ${language})`);
 
-    // For now, return mock SwiftUI code demonstrating the transformation
-    // In production, this would call the LLM API with the generated prompt
-    const transformedCode = isKotlin 
-      ? generateMockSwiftUICode(code)
-      : generateMockTransformedCode(code);
+    // Build the user prompt
+    const userPrompt = buildUserPrompt(code, instructions, { language });
+
+    // Call OpenAI for transformation
+    const transformedCode = await runCodexiaTransform(userPrompt, {
+      stream: false,
+      temperature: 0.3
+    });
 
     return {
       success: true,
       originalCode: code,
       transformedCode: transformedCode,
-      language: isKotlin ? 'Kotlin' : 'Unknown',
-      targetLanguage: isKotlin ? 'SwiftUI' : 'Transformed',
-      prompt: prompt,
-      note: 'This is a mock transformation. LLM integration will provide actual transformations.'
+      language: language,
+      targetLanguage: 'SwiftUI',
+      note: process.env.OPENAI_API_KEY 
+        ? 'Transformed using OpenAI API' 
+        : 'Mock transformation (configure OPENAI_API_KEY for actual transformations)'
     };
   } catch (error) {
+    logger.error(`Single file transformation error: ${error.message}`);
     throw new Error(`Transformation failed: ${error.message}`);
   }
 }
@@ -57,10 +61,18 @@ async function handleSingleFile(code, instructions) {
  */
 async function transformKotlinToSwiftUI(kotlinCode, instructions) {
   try {
-    const prompt = generateKotlinToSwiftUIPrompt(kotlinCode, instructions);
-    
-    // Mock SwiftUI transformation
-    const transformedCode = generateMockSwiftUICode(kotlinCode);
+    logger.info('Transforming Kotlin to SwiftUI');
+
+    // Build the user prompt specifically for Kotlin
+    const userPrompt = buildUserPrompt(kotlinCode, instructions, { 
+      language: 'Kotlin' 
+    });
+
+    // Call OpenAI for transformation
+    const transformedCode = await runCodexiaTransform(userPrompt, {
+      stream: false,
+      temperature: 0.3
+    });
 
     return {
       success: true,
@@ -68,75 +80,15 @@ async function transformKotlinToSwiftUI(kotlinCode, instructions) {
       transformedCode: transformedCode,
       language: 'Kotlin',
       targetLanguage: 'SwiftUI',
-      prompt: prompt,
       transformations: extractKotlinTransformations(kotlinCode),
-      note: 'This is a mock transformation. LLM integration will provide actual transformations.'
+      note: process.env.OPENAI_API_KEY 
+        ? 'Transformed using OpenAI API' 
+        : 'Mock transformation (configure OPENAI_API_KEY for actual transformations)'
     };
   } catch (error) {
+    logger.error(`Kotlin to SwiftUI transformation error: ${error.message}`);
     throw new Error(`Kotlin to SwiftUI transformation failed: ${error.message}`);
   }
-}
-
-/**
- * Generate mock SwiftUI code based on Kotlin patterns
- * 
- * @param {string} kotlinCode - Original Kotlin code
- * @returns {string} Mock SwiftUI code
- */
-function generateMockSwiftUICode(kotlinCode) {
-  // Detect common Kotlin patterns and generate corresponding SwiftUI
-  const hasDataClass = /data\s+class\s+(\w+)/.test(kotlinCode);
-  const hasActivity = /class\s+(\w+)\s*:\s*AppCompatActivity/.test(kotlinCode);
-  const hasComposable = /@Composable/.test(kotlinCode);
-
-  let swiftCode = `import SwiftUI\n\n`;
-
-  if (hasDataClass) {
-    const dataClassMatch = kotlinCode.match(/data\s+class\s+(\w+)\s*\((.*?)\)/);
-    if (dataClassMatch) {
-      const className = dataClassMatch[1];
-      swiftCode += `// Transformed from Kotlin data class\nstruct ${className}: Codable {\n`;
-      swiftCode += `    // Properties converted from Kotlin\n`;
-      swiftCode += `    // Original Kotlin properties will be mapped here\n`;
-      swiftCode += `}\n\n`;
-    }
-  }
-
-  if (hasActivity || hasComposable) {
-    swiftCode += `// Transformed from Kotlin Activity/Composable\nstruct ContentView: View {\n`;
-    swiftCode += `    var body: some View {\n`;
-    swiftCode += `        VStack {\n`;
-    swiftCode += `            Text("Transformed from Kotlin")\n`;
-    swiftCode += `                .font(.title)\n`;
-    swiftCode += `                .padding()\n`;
-    swiftCode += `            \n`;
-    swiftCode += `            // UI components will be transformed here\n`;
-    swiftCode += `            // Kotlin layouts → SwiftUI declarative views\n`;
-    swiftCode += `        }\n`;
-    swiftCode += `    }\n`;
-    swiftCode += `}\n\n`;
-    swiftCode += `#Preview {\n`;
-    swiftCode += `    ContentView()\n`;
-    swiftCode += `}\n`;
-  } else {
-    // Generic transformation
-    swiftCode += `// Transformed Kotlin code\n`;
-    swiftCode += `// Original structure preserved with Swift idioms\n\n`;
-    swiftCode += `// Functions, classes, and logic converted to Swift\n`;
-    swiftCode += `// Following SwiftUI best practices\n`;
-  }
-
-  return swiftCode;
-}
-
-/**
- * Generate mock transformed code for non-Kotlin languages
- * 
- * @param {string} code - Original code
- * @returns {string} Mock transformed code
- */
-function generateMockTransformedCode(code) {
-  return `// Transformed Code\n// Original code structure:\n${code.split('\n').map(line => `// ${line}`).join('\n')}\n\n// Transformed code will appear here after LLM integration\n`;
 }
 
 /**
@@ -206,14 +158,40 @@ function extractKotlinTransformations(kotlinCode) {
 async function transformMultipleFiles(files, instructions) {
   const results = [];
 
-  for (const file of files) {
+  logger.info(`Transforming ${files.length} files`);
+
+  for (let i = 0; i < files.length; i++) {
+    const file = files[i];
     try {
-      const result = await handleSingleFile(file.content, instructions);
+      // Detect language
+      const isKotlin = isKotlinCode(file.content);
+      const language = isKotlin ? 'Kotlin' : 'Unknown';
+
+      // Build user prompt with file metadata
+      const userPrompt = buildUserPrompt(file.content, instructions, {
+        language: language,
+        filename: file.name,
+        fileCount: files.length
+      });
+
+      // Transform the file
+      const transformedCode = await runCodexiaTransform(userPrompt, {
+        stream: false,
+        temperature: 0.3
+      });
+
       results.push({
         fileName: file.name,
-        ...result
+        success: true,
+        originalCode: file.content,
+        transformedCode: transformedCode,
+        language: language,
+        targetLanguage: 'SwiftUI'
       });
+
+      logger.info(`File ${i + 1}/${files.length} transformed: ${file.name}`);
     } catch (error) {
+      logger.error(`Error transforming file ${file.name}: ${error.message}`);
       results.push({
         fileName: file.name,
         success: false,
@@ -229,6 +207,5 @@ module.exports = {
   handleSingleFile,
   transformKotlinToSwiftUI,
   transformMultipleFiles,
-  generateMockSwiftUICode,
   extractKotlinTransformations
 };
