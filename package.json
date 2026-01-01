@@ -7,11 +7,17 @@
     "start": "node server.js",
     "dev": "node server.js"
   },
-  "keywords": ["codexia", "backend", "express", "api"],
+  "keywords": [
+    "codexia",
+    "backend",
+    "express",
+    "api"
+  ],
   "author": "",
   "license": "ISC",
   "dependencies": {
+    "cors": "^2.8.5",
     "express": "^4.18.2",
-    "cors": "^2.8.5"
+    "openai": "^6.15.0"
   }
 }
