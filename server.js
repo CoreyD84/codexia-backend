@@ -138,13 +138,6 @@ app.post('/transformCode', upload.single('file'), async (req, res) => {
     // JSON Multi-File Mode
     const { files, instructions, options: clientOptions } = req.body;
 
-    // DEBUG: Check how much content the app actually sent
-    try {
-      console.log("DEBUG: Received file length:", files?.[0]?.content?.length);
-    } catch (e) {
-      console.log("DEBUG: Could not read file length:", e.message);
-    }
-
     if (!files || !Array.isArray(files) || files.length === 0) {
       return res.status(400).json({ success: false, error: 'No files provided' });
     }
@@ -185,13 +178,6 @@ app.post('/analyze', async (req, res) => {
   try {
     const { files, options: clientOptions } = req.body;
 
-    // DEBUG: Check how much content the app actually sent
-    try {
-      console.log("DEBUG: Received file length:", files?.[0]?.content?.length);
-    } catch (e) {
-      console.log("DEBUG: Could not read file length:", e.message);
-    }
-
     if (!files || !Array.isArray(files) || files.length === 0) {
       return res.status(400).json({
         success: false,
@@ -220,19 +206,44 @@ app.post('/analyze', async (req, res) => {
 });
 
 // ---------------------------------------------------------
+// DEBUG ONESHOT ENDPOINT
+// ---------------------------------------------------------
+app.post('/debugTransformOnce', async (req, res) => {
+  try {
+    console.log("DEBUG ONESHOT: Body:", JSON.stringify(req.body).slice(0, 800));
+
+    const files = req.body.files || [];
+    const instructions = req.body.instructions || "Convert this Kotlin to idiomatic SwiftUI.";
+
+    if (!files.length || !files[0].content) {
+      return res.status(400).json({ error: "No file content provided" });
+    }
+
+    const combinedSource = files.map(f => f.content).join('\n\n');
+
+    // TODO: replace this with your real non-streaming engine call
+    // For now, we just echo back a mocked transform so you can see the path is correct.
+    const fakeSwiftUI = `// DEBUG SWIFTUI OUTPUT\n// Path: ${files[0].path || "Unknown"}\n\n// Kotlin length: ${combinedSource.length}\n`;
+
+    console.log("DEBUG ONESHOT: Returning Swift length:", fakeSwiftUI.length);
+
+    return res.json({
+      success: true,
+      swiftui: fakeSwiftUI,
+    });
+  } catch (err) {
+    console.error("DEBUG ONESHOT ERROR:", err);
+    return res.status(500).json({ error: "Internal debug error" });
+  }
+});
+
+// ---------------------------------------------------------
 // STREAMING TRANSFORM ENDPOINT (Single-File SSE)
 // ---------------------------------------------------------
 app.post('/transformCode/stream', async (req, res) => {
   console.log("DEBUG STREAM: Raw body received:", JSON.stringify(req.body).slice(0, 500));
   try {
     const { files, instructions, options: clientOptions } = req.body;
-
-    // DEBUG: Check how much content the app actually sent
-    try {
-      console.log("DEBUG: Received file length:", files?.[0]?.content?.length);
-    } catch (e) {
-      console.log("DEBUG: Could not read file length:", e.message);
-    }
 
     if (!files || !Array.isArray(files) || files.length === 0) {
       return res.status(400).json({
