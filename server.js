@@ -138,6 +138,13 @@ app.post('/transformCode', upload.single('file'), async (req, res) => {
     // JSON Multi-File Mode
     const { files, instructions, options: clientOptions } = req.body;
 
+    // DEBUG: Check how much content the app actually sent
+    try {
+      console.log("DEBUG: Received file length:", files?.[0]?.content?.length);
+    } catch (e) {
+      console.log("DEBUG: Could not read file length:", e.message);
+    }
+
     if (!files || !Array.isArray(files) || files.length === 0) {
       return res.status(400).json({ success: false, error: 'No files provided' });
     }
@@ -178,6 +185,13 @@ app.post('/analyze', async (req, res) => {
   try {
     const { files, options: clientOptions } = req.body;
 
+    // DEBUG: Check how much content the app actually sent
+    try {
+      console.log("DEBUG: Received file length:", files?.[0]?.content?.length);
+    } catch (e) {
+      console.log("DEBUG: Could not read file length:", e.message);
+    }
+
     if (!files || !Array.isArray(files) || files.length === 0) {
       return res.status(400).json({
         success: false,
@@ -209,8 +223,16 @@ app.post('/analyze', async (req, res) => {
 // STREAMING TRANSFORM ENDPOINT (Single-File SSE)
 // ---------------------------------------------------------
 app.post('/transformCode/stream', async (req, res) => {
+  console.log("DEBUG STREAM: Raw body received:", JSON.stringify(req.body).slice(0, 500));
   try {
     const { files, instructions, options: clientOptions } = req.body;
+
+    // DEBUG: Check how much content the app actually sent
+    try {
+      console.log("DEBUG: Received file length:", files?.[0]?.content?.length);
+    } catch (e) {
+      console.log("DEBUG: Could not read file length:", e.message);
+    }
 
     if (!files || !Array.isArray(files) || files.length === 0) {
       return res.status(400).json({
