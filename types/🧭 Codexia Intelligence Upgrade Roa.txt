@@ -1,0 +1,153 @@
+🧭 Codexia Intelligence Upgrade Roadmap
+⭐ PHASE 1 — Foundation Enhancements (Low effort, high impact)
+These upgrades make Codexia more accurate without changing your API.
+1. Deterministic File Role Classifier (DONE)
+Effort: Already implemented
+Impact: High
+Why: Gives the model a head start and stabilizes architecture analysis.
+2. Deterministic Coupling Score
+Effort: Low
+Impact: Medium
+Why: Replaces model guesswork with a formula based on imports + cross‑file references.
+Plugs into:
+projectContext.js → add imports extraction
+analyzeProject.js → compute coupling before sending to model
+
+⭐⭐ PHASE 2 — Structural Intelligence (Medium effort, very high impact)
+These upgrades make Codexia feel like a real architect.
+3. Dependency Graph Extractor
+Effort: Medium
+Impact: Very high
+Why: Enables:
+- migration sequencing
+- coupling analysis
+- risk propagation
+- UI → ViewModel → Service mapping
+Plugs into:
+projectContext.js → extract imports
+analyzeProject.js → include graph in context
+System prompt → model uses it for reasoning
+
+4. ViewModel → UI Mapping
+Effort: Medium
+Impact: High
+Why: Lets Codexia say:
+- “HomeScreen uses HomeViewModel”
+- “This ViewModel is unused”
+- “This ViewModel is shared across screens”
+Plugs into:
+projectContext.js → detect ViewModel usage
+projectContext.js → detect composables referencing state
+Analyzer → model uses this to infer architecture
+
+5. Service Usage Mapping
+Effort: Medium
+Impact: Medium
+Why: Helps Codexia understand:
+- API dependencies
+- repository patterns
+- network layers
+Plugs into:
+projectContext.js → detect service calls
+Analyzer → model uses this for migration difficulty
+
+⭐⭐⭐ PHASE 3 — Migration Intelligence (High impact, optional)
+These upgrades turn Codexia into a migration strategist, not just an analyzer.
+6. Migration Timeline Estimator
+Effort: Medium
+Impact: Very high
+Why: Gives founders and teams a sense of effort:
+- “UI migration: 3–5 hours”
+- “ViewModel migration: 1–2 hours”
+- “Service migration: 2–4 hours”
+Plugs into:
+Analyzer → new field: migrationTimeline
+
+7. Risk Scoring Formula
+Effort: Medium
+Impact: High
+Why: Makes riskHeatmap deterministic:
+- UI files = high
+- Navigation = medium
+- Data models = low
+Plugs into:
+projectContext.js → role-based scoring
+Analyzer → new field: riskScore
+
+8. Migration Sequencing Engine
+Effort: Medium
+Impact: Very high
+Why: Lets Codexia say:
+- “Migrate services first”
+- “Then ViewModels”
+- “Then UI files”
+- “Navigation last”
+Plugs into:
+Analyzer → recommendedMigrationOrder
+
+⭐⭐⭐⭐ PHASE 4 — Visualization & Frontend Intelligence (Optional but magical)
+9. Dependency Graph Visualization Format
+Effort: Low
+Impact: Very high
+Why: Enables a graph UI:
+- nodes = files
+- edges = dependencies
+- colors = roles
+- thickness = coupling
+Plugs into:
+Analyzer → new field: graphNodes, graphEdges
+
+10. Complexity Heatmap
+Effort: Low
+Impact: Medium
+Why: Lets you color files by complexity:
+- green = simple
+- yellow = moderate
+- red = complex
+Plugs into:
+Analyzer → new field: complexityHeatmap
+
+🧩 PHASE 5 — Advanced Reasoning (Optional, future)
+11. Architectural Pattern Detection
+Detect:
+- MVVM
+- MVI
+- Clean Architecture
+- Repository pattern
+- Use cases
+12. Anti‑pattern Detection
+Detect:
+- God classes
+- Over‑coupled ViewModels
+- UI‑heavy Activities
+- Missing DI boundaries
+13. Migration Simulation
+Codexia predicts:
+- what breaks
+- what needs refactoring
+- what order to fix things
+
+🎯 Recommended Order (Founder‑grade summary)
+Here’s the roadmap in one clean list:
+- File role classifier (done)
+- Coupling score
+- Dependency graph extraction
+- ViewModel → UI mapping
+- Service usage mapping
+- Migration timeline estimator
+- Risk scoring formula
+- Migration sequencing engine
+- Dependency graph visualization format
+- Complexity heatmap
+- Architectural pattern detection
+- Anti‑pattern detection
+- Migration simulation engine
+This is a 12–18 week roadmap if done sequentially, or 6–8 weeks if parallelized.
+
+If you want, I can now generate:
+✔ A printable PDF‑style roadmap
+✔ A GitHub Project board layout
+✔ A milestone breakdown
+✔ A “Phase 2” implementation plan
+✔ A “Phase 3” architecture diagram
+Just tell me what format you want.

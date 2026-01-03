@@ -1,207 +1,248 @@
-# codexia-backend
 
-AI-powered backend for Codexia — transforms Android/Java/Kotlin codebases into native Swift/SwiftUI iOS projects using LLM-driven analysis, file chunking, and multi-file generation.
 
-## Features
+# 🌟 Codexia Backend — Multi‑File AI Transformation Engine
+*A human‑centered code transformation engine built for clarity, trust, and emotional resonance.*
 
-### Multi-format Input Support
-- **Single File JSON**: Send code directly as JSON (backward compatible)
-- **Zip File Upload**: Upload `.zip` files containing multiple source files
-- **GitHub Repository URL**: Provide a GitHub repository URL to process entire repos
+Codexia is a next‑generation AI transformation engine that converts **Android/Kotlin projects into Swift/SwiftUI**, using a hybrid of deterministic rules, project‑level intelligence, and LLM‑powered reasoning.
 
-### Kotlin → SwiftUI Conversion
-- Specialized transformation logic for Kotlin syntax patterns
-- Intelligent detection of Kotlin code features:
-  - Data classes → Swift structs with Codable
-  - Activities/Fragments → SwiftUI Views
-  - Coroutines → async/await
-  - Composables → SwiftUI Views
-  - Lambdas → Swift closures
+This backend powers the transformation pipeline — handling ZIP uploads, GitHub repositories, multi‑file orchestration, streaming output, and full‑project context analysis.
 
-### Streaming Responses
-- Server-Sent Events (SSE) for real-time code transformation
-- Progressive output with live updates
-- Progress indicators and metadata
+Codexia isn’t just a tool.  
+It’s a promise: **technology that feels protective, predictable, and emotionally grounded.**
 
-### Error Handling
-- Comprehensive validation and error messages
-- Structured logging with Winston
-- User-friendly error responses with technical details
+---
 
-## API Endpoints
+# 🚀 Features
 
-### `POST /transformCode`
+### 🔹 Multi‑File Transformation Engine
+Transforms entire Android projects — not just single files — using a hybrid sequential/parallel pipeline.
 
-Main endpoint supporting multiple input formats.
+### 🔹 Full Project Context
+Builds a project‑wide understanding:
+- Class map  
+- Navigation graph  
+- File summaries  
+- Dependency relationships  
 
-#### Single File (JSON)
-```bash
-curl -X POST http://localhost:3000/transformCode \
-  -H "Content-Type: application/json" \
-  -d '{
-    "code": "data class User(val name: String, val age: Int)",
-    "instructions": "Convert to SwiftUI"
-  }'
+### 🔹 Hybrid Classification
+Determines which files require sequential reasoning vs. parallel processing.
+
+### 🔹 Streaming Output
+Real‑time transformation results with `[END_FILE]` and `[END]` markers.
+
+### 🔹 ZIP, GitHub, and JSON Input
+Supports:
+- ZIP uploads  
+- GitHub repo URLs  
+- Raw JSON multi‑file payloads  
+
+### 🔹 Deterministic Prompting
+Uses a structured system prompt + user prompt for predictable, stable output.
+
+### 🔹 Clean, Modular Architecture
+Every component is isolated, testable, and built for long‑term evolution.
+
+---
+
+# 📁 Folder Structure
+
+```
+codexia-backend/
+│ server.js
+│ package.json
+│ .env
+│ README.md
+│
+├── openaiClient/
+│   └── openaiClient.js
+│
+├── prompt/
+│   ├── buildSystemPrompt.js
+│   └── buildUserPrompt.js
+│
+├── types/
+│   └── TransformOptions.js
+│
+└── utils/
+    ├── codeTransformers.js
+    ├── fileClassifier.js
+    ├── fileHandlers.js
+    ├── logger.js
+    ├── multiFileOrchestrator.js
+    ├── projectContext.js
+    └── streamingHelpers.js
 ```
 
-#### Zip File Upload
-```bash
-curl -X POST http://localhost:3000/transformCode \
-  -F "file=@project.zip" \
-  -F "instructions=Convert all Kotlin files to SwiftUI"
-```
+This is the **final, validated, production‑grade structure**.
 
-#### GitHub Repository URL
-```bash
-curl -X POST http://localhost:3000/transformCode \
-  -H "Content-Type: application/json" \
-  -d '{
-    "githubUrl": "https://github.com/user/kotlin-app",
-    "instructions": "Convert to SwiftUI, focus on UI components"
-  }'
-```
+---
 
-### `POST /transformCode/stream`
+# ⚙️ Setup
 
-Streaming endpoint with Server-Sent Events (SSE).
-
-```bash
-curl -N -X POST http://localhost:3000/transformCode/stream \
-  -H "Content-Type: application/json" \
-  -d '{
-    "code": "data class User(val name: String)",
-    "instructions": "Convert to SwiftUI with streaming"
-  }'
-```
-
-### `GET /health`
-
-Health check endpoint.
-
-```bash
-curl http://localhost:3000/health
-```
-
-## Installation
-
+### 1. Install dependencies
 ```bash
 npm install
 ```
 
-## Running the Server
+### 2. Create `.env`
+```
+OPENAI_API_KEY=your_key_here
+PORT=3000
+```
 
+### 3. Start the server
 ```bash
-npm start
+node server.js
 ```
 
-The server will start on port 3000 by default. You can override this with the `PORT` environment variable.
+---
 
-## Development
+# 🔌 API Endpoints
 
-```bash
-npm run dev
-```
+## **POST /transformCode**
+Transforms a single file or multi‑file JSON payload.
 
-## Project Structure
+## **POST /transformCode/stream**
+Streams transformation output for a single file.
 
-```
-codexia-backend/
-├── server.js                   # Main Express server (route orchestration)
-├── codexiaPrompt.js           # Codexia system prompt for OpenAI
-├── openaiClient.js            # OpenAI API wrapper and helper functions
-├── utils/
-│   ├── promptTemplates.js     # Legacy prompt templates (deprecated in favor of codexiaPrompt.js)
-│   ├── fileHandlers.js        # Zip and GitHub repository handling
-│   ├── transformers.js        # Code transformation logic with OpenAI integration
-│   ├── streamingHelpers.js   # SSE streaming utilities
-│   └── logger.js              # Winston logger configuration
-├── package.json
-└── README.md
-```
+## **POST /transformCode/stream/multi**
+Streams multi‑file output with `[END_FILE]` and `[END]` markers.
 
-### Module Responsibilities
+## **POST /transformCode/zip**
+Uploads and transforms a ZIP project.
 
-- **server.js**: Route orchestration, request validation, and response handling
-- **codexiaPrompt.js**: Defines the Codexia system prompt that guides AI transformations
-- **openaiClient.js**: Reusable OpenAI API wrapper with error handling and mock fallbacks
-- **utils/transformers.js**: Integrates with OpenAI client for code transformations
-- **utils/fileHandlers.js**: Handles file extraction from zips and GitHub repos
-- **utils/streamingHelpers.js**: SSE implementation for real-time streaming responses
+## **POST /transformCode/github**
+Transforms a GitHub repository.
 
-## Supported File Types
+---
 
-- `.kt` - Kotlin
-- `.java` - Java
-- `.swift` - Swift
-- `.js` - JavaScript
-- `.ts` - TypeScript
-- `.py` - Python
-- `.go` - Go
-- `.xml` - XML layouts
+# 🧪 Test Payloads
 
-## Configuration
-
-### Environment Variables
-
-- `PORT` - Server port (default: 3000)
-- `NODE_ENV` - Environment mode (development/production)
-- `LOG_LEVEL` - Logging level (default: info)
-- `OPENAI_API_KEY` - OpenAI API key for code transformations (optional, uses mock responses if not set)
-
-### OpenAI Integration
-
-The backend uses OpenAI's GPT-4 to perform actual code transformations. To enable this feature:
-
-1. Obtain an OpenAI API key from [https://platform.openai.com](https://platform.openai.com)
-2. Set the `OPENAI_API_KEY` environment variable:
-   ```bash
-   export OPENAI_API_KEY='your-api-key-here'
-   npm start
-   ```
-
-If no API key is configured, the server will return mock SwiftUI transformations for testing purposes.
-
-#### Codexia System Prompt
-
-The transformation uses a specialized system prompt (`codexiaPrompt.js`) that guides the AI to:
-- Transform Android/Kotlin code into idiomatic SwiftUI
-- Follow Apple's best practices and design patterns
-- Map Kotlin patterns to Swift equivalents (coroutines → async/await, data classes → structs, etc.)
-- Return production-ready iOS code
-
-#### OpenAI Client
-
-The `openaiClient.js` module provides a clean, reusable wrapper for OpenAI API calls:
-- Handles both streaming and non-streaming responses
-- Provides detailed error messages for common issues
-- Falls back to mock responses when API key is not configured
-- Supports customizable model, temperature, and token limits
-
-### File Size Limits
-
-- Maximum upload size: 10MB
-- Maximum chunk size for LLM processing: 5000 characters
-
-## Error Response Format
-
+## **1. JSON Multi‑File Payload**
 ```json
 {
-  "success": false,
-  "error": "User-friendly error message",
-  "details": "Technical details for debugging"
+  "files": [
+    {
+      "path": "MainActivity.kt",
+      "content": "package com.example..."
+    },
+    {
+      "path": "ui/HomeScreen.kt",
+      "content": "package com.example.ui..."
+    }
+  ]
 }
 ```
 
-## Future Enhancements
+---
 
-- Real-time streaming transformations with OpenAI streaming API
-- More language transformations (Java → Swift, React Native → SwiftUI)
-- Advanced code analysis and optimization suggestions
-- Syntax preservation options
-- Custom transformation templates
-- Batch processing for large repositories
-- Support for more LLM providers (Anthropic Claude, local models)
+## **2. ZIP Upload (Thunder Client / Postman)**
+Form‑data:
+```
+file: <your zip>
+```
 
-## License
+---
 
-ISC
+## **3. GitHub Repo Payload**
+```json
+{
+  "repoUrl": "https://github.com/your/repo"
+}
+```
+
+---
+
+# 🌀 Streaming Examples
+
+## **Single‑File Streaming (curl)**
+```bash
+curl -N -X POST http://localhost:3000/transformCode/stream \
+  -H "Content-Type: application/json" \
+  -d '{"code": "fun main() { println(\"Hello\") }"}'
+```
+
+---
+
+## **Multi‑File Streaming (curl)**
+```bash
+curl -N -X POST http://localhost:3000/transformCode/stream/multi \
+  -H "Content-Type: application/json" \
+  -d '{
+    "files": [
+      { "path": "MainActivity.kt", "content": "..." },
+      { "path": "ui/Home.kt", "content": "..." }
+    ]
+  }'
+```
+
+Streaming output will look like:
+
+```
+--- FILE: MainActivity.kt ---
+<SwiftUI output>
+[END_FILE]
+
+--- FILE: ui/Home.kt ---
+<SwiftUI output>
+[END_FILE]
+
+[END]
+```
+
+---
+
+# ❤️ Health & Version Endpoints
+
+Add these to `server.js`:
+
+```js
+app.get('/health', (req, res) => {
+  res.json({ status: 'ok', uptime: process.uptime() });
+});
+
+app.get('/version', (req, res) => {
+  res.json({ version: '2.0.0', build: 'multi-file-engine' });
+});
+```
+
+---
+
+# 🧵 Request‑ID Logging
+
+Add this middleware to `server.js`:
+
+```js
+app.use((req, res, next) => {
+  req.id = Math.random().toString(36).substring(2, 10);
+  console.log(`[${req.id}] ${req.method} ${req.url}`);
+  next();
+});
+```
+
+Then update logs like:
+
+```js
+console.log(`[${req.id}] Starting multi-file transform`);
+```
+
+This gives you **traceable, production‑grade logs**.
+
+---
+
+# 🌱 The Philosophy Behind Codexia
+
+Codexia isn’t just a code transformer.  
+It’s a commitment to:
+
+- clarity  
+- emotional safety  
+- predictable output  
+- human‑centered engineering  
+
+Every architectural decision — from the orchestrator to the prompt design — reinforces that promise.
+
+This backend is the foundation of that vision.
+
+---
+

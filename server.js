@@ -1,242 +1,273 @@
-/**
- * Codexia Backend Server
- * 
- * Main Express server for code transformation service.
- * Orchestrates multi-format inputs (JSON, zip, GitHub URLs) and
- * integrates with OpenAI for Kotlin→SwiftUI transformations.
- */
+require('dotenv').config();
 
 const express = require('express');
 const cors = require('cors');
 const multer = require('multer');
 
-// Import utilities
 const logger = require('./utils/logger');
-const { handleZipUpload, handleGitHubUrl, chunkFiles, MAX_FILE_SIZE } = require('./utils/fileHandlers');
-const { handleSingleFile, transformMultipleFiles } = require('./utils/transformers');
-const { streamTransformedCode, streamMultipleTransformations } = require('./utils/streamingHelpers');
-const { runCodexiaTransform, buildUserPrompt } = require('./openaiClient');
+const { handleZipUpload, handleGitHubUrl, MAX_FILE_SIZE } = require('./utils/fileHandlers');
+const { handleSingleFile } = require('./utils/codeTransformers');
+const { transformMultipleFiles } = require('./utils/multiFileOrchestrator');
+const { getDefaultTransformOptions } = require('./types/TransformOptions');
+
+const {
+  runCodexiaTransformStream,
+  buildMessages
+} = require('./codexiaEngine/codexiaEngine');
+
+const { buildSystemPrompt } = require('./prompt/buildSystemPrompt');
+const { buildUserPrompt } = require('./prompt/buildUserPrompt');
+
+// NEW: Analyzer
+const { analyzeProject } = require('./utils/analyzeProject');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// Configure multer for file uploads (store in memory)
+const SERVICE_NAME = 'Codexia Backend';
+const SERVICE_VERSION = '2.1.0';
+const ENGINE_VERSION = 'codexiaEngine-v1';
+
 const upload = multer({
   storage: multer.memoryStorage(),
-  limits: {
-    fileSize: MAX_FILE_SIZE // Use constant from fileHandlers.js
-  },
-  fileFilter: (req, file, cb) => {
-    const allowedMimeTypes = [
-      'application/zip',
-      'application/x-zip-compressed',
-      'application/x-zip',
-      'application/octet-stream'
-    ];
-    
-    // Also check file extension
-    const hasZipExtension = file.originalname && file.originalname.toLowerCase().endsWith('.zip');
-    
-    if (allowedMimeTypes.includes(file.mimetype) || hasZipExtension) {
-      cb(null, true);
-    } else {
-      cb(new Error('Only .zip files are allowed'));
-    }
-  }
+  limits: { fileSize: MAX_FILE_SIZE }
 });
 
-// Middleware
 app.use(cors());
 app.use(express.json({ limit: '10mb' }));
 
-// Root endpoint
+// ---------------------------------------------------------
+// ROOT
+// ---------------------------------------------------------
 app.get('/', (req, res) => {
   res.json({
-    service: 'Codexia Backend',
-    version: '2.0.0',
-    status: 'running',
-    endpoints: {
-      'POST /transformCode': 'Transform code (JSON, GitHub URL, or multipart zip)',
-      'POST /transformCode/stream': 'Transform code with SSE streaming',
-      'GET /health': 'Health check endpoint'
-    }
+    service: SERVICE_NAME,
+    version: SERVICE_VERSION,
+    status: 'running'
   });
 });
 
-// Health check endpoint
+// ---------------------------------------------------------
+// HEALTH & VERSION
+// ---------------------------------------------------------
 app.get('/health', (req, res) => {
-  res.json({ status: 'healthy', timestamp: new Date().toISOString() });
+  res.json({
+    status: 'ok',
+    service: SERVICE_NAME,
+    version: SERVICE_VERSION,
+    engineVersion: ENGINE_VERSION,
+    uptimeMs: process.uptime() * 1000,
+    timestamp: new Date().toISOString()
+  });
 });
 
-// Transform code endpoint - main endpoint with multi-format support
+app.get('/version', (req, res) => {
+  res.json({
+    service: SERVICE_NAME,
+    version: SERVICE_VERSION,
+    engineVersion: ENGINE_VERSION,
+    nodeVersion: process.version,
+    env: process.env.NODE_ENV || 'development'
+  });
+});
+
+// ---------------------------------------------------------
+// MAIN TRANSFORM ENDPOINT (ZIP, GitHub, JSON Multi-File)
+// ---------------------------------------------------------
 app.post('/transformCode', upload.single('file'), async (req, res) => {
   const startTime = Date.now();
-  
+
   try {
     logger.info('Received transformation request');
 
-    // Case 1: Multipart file upload (zip)
+    // ---------------------------------------------------------
+    // ZIP upload
+    // ---------------------------------------------------------
     if (req.file) {
-      logger.info(`Processing zip file: ${req.file.originalname}`);
-      
-      try {
-        const files = await handleZipUpload(req.file);
-        const instructions = req.body.instructions || 'Convert to SwiftUI';
-        
-        logger.info(`Extracted ${files.length} files from zip`);
-        
-        const results = await transformMultipleFiles(files, instructions);
-        
-        const duration = Date.now() - startTime;
-        logger.info(`Transformation completed in ${duration}ms`);
-        
-        return res.json({
-          success: true,
-          message: 'Zip file processed successfully',
-          filesProcessed: files.length,
-          results: results,
-          duration: `${duration}ms`
-        });
-      } catch (error) {
-        logger.error(`Zip processing error: ${error.message}`);
-        return res.status(400).json({
-          success: false,
-          error: error.message,
-          details: 'Failed to process zip file upload'
-        });
-      }
-    }
+      const files = await handleZipUpload(req.file);
+      const instructions = req.body.instructions || 'Convert to SwiftUI';
 
-    // Case 2: GitHub URL
-    if (req.body.githubUrl) {
-      logger.info(`Processing GitHub URL: ${req.body.githubUrl}`);
-      
-      try {
-        const files = await handleGitHubUrl(req.body.githubUrl);
-        const instructions = req.body.instructions || 'Convert to SwiftUI';
-        
-        logger.info(`Downloaded ${files.length} files from GitHub`);
-        
-        const results = await transformMultipleFiles(files, instructions);
-        
-        const duration = Date.now() - startTime;
-        logger.info(`Transformation completed in ${duration}ms`);
-        
-        return res.json({
-          success: true,
-          message: 'GitHub repository processed successfully',
-          filesProcessed: files.length,
-          results: results,
-          duration: `${duration}ms`
-        });
-      } catch (error) {
-        logger.error(`GitHub processing error: ${error.message}`);
-        return res.status(400).json({
-          success: false,
-          error: error.message,
-          details: 'Failed to process GitHub repository'
-        });
-      }
-    }
+      const results = await transformMultipleFiles(files, instructions);
 
-    // Case 3: Single file JSON (backward compatible)
-    const { code, instructions } = req.body;
-
-    // Validation
-    if (!code || typeof code !== 'string') {
-      logger.warn('Invalid request: missing or invalid code field');
-      return res.status(400).json({
-        success: false,
-        error: 'Invalid request: "code" field is required and must be a string',
-        details: 'Please provide code to transform'
-      });
-    }
-
-    if (!instructions || typeof instructions !== 'string') {
-      logger.warn('Invalid request: missing or invalid instructions field');
-      return res.status(400).json({
-        success: false,
-        error: 'Invalid request: "instructions" field is required and must be a string',
-        details: 'Please provide transformation instructions'
-      });
-    }
-
-    logger.info('Processing single file transformation');
-    
-    try {
-      const result = await handleSingleFile(code, instructions);
-      
-      const duration = Date.now() - startTime;
-      logger.info(`Transformation completed in ${duration}ms`);
-      
       return res.json({
         success: true,
-        message: 'Code transformation completed',
-        ...result,
-        duration: `${duration}ms`
-      });
-    } catch (error) {
-      logger.error(`Transformation error: ${error.message}`);
-      return res.status(500).json({
-        success: false,
-        error: 'Transformation failed',
-        details: error.message
+        filesProcessed: files.length,
+        results,
+        duration: `${Date.now() - startTime}ms`
       });
     }
+
+    // ---------------------------------------------------------
+    // GitHub URL
+    // ---------------------------------------------------------
+    if (req.body.githubUrl) {
+      const files = await handleGitHubUrl(req.body.githubUrl);
+      const instructions = req.body.instructions || 'Convert to SwiftUI';
+
+      const results = await transformMultipleFiles(files, instructions);
+
+      return res.json({
+        success: true,
+        filesProcessed: files.length,
+        results,
+        duration: `${Date.now() - startTime}ms`
+      });
+    }
+
+    // ---------------------------------------------------------
+    // JSON Multi-File Mode
+    // ---------------------------------------------------------
+    const { files, instructions, options: clientOptions } = req.body;
+
+    if (!files || !Array.isArray(files) || files.length === 0) {
+      return res.status(400).json({ success: false, error: 'No files provided' });
+    }
+
+    const mergedOptions = getDefaultTransformOptions(clientOptions || {});
+
+    // Accept BOTH raw content and base64
+    const normalizedFiles = files.map(f => {
+      let content = f.content;
+
+      if (!content && f.code_b64) {
+        content = Buffer.from(f.code_b64, 'base64').toString('utf8');
+      }
+
+      if (!content) {
+        throw new Error(`File "${f.path}" is missing both "content" and "code_b64"`);
+      }
+
+      return {
+        path: f.path || 'UnknownFile.kt',
+        language: f.language || 'kotlin',
+        content
+      };
+    });
+
+    // MULTI-FILE TRANSFORMATION
+    const result = await transformMultipleFiles(
+      normalizedFiles,
+      instructions,
+      mergedOptions
+    );
+
+    return res.json({
+      success: result.success,
+      filesTransformed: result.filesTransformed,
+      sequentialCount: result.sequentialCount,
+      parallelCount: result.parallelCount,
+      projectContext: result.projectContext,
+      results: result.results,
+      parallelErrors: result.parallelErrors,
+      optionsUsed: mergedOptions,
+      duration: `${Date.now() - startTime}ms`
+    });
+
   } catch (error) {
-    logger.error(`Unexpected error in /transformCode: ${error.message}`, { stack: error.stack });
+    logger.error(`Transform error: ${error.message}`);
+    return res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// ---------------------------------------------------------
+// PROJECT ANALYSIS ENDPOINT (NEW)
+// ---------------------------------------------------------
+app.post('/analyze', async (req, res) => {
+  try {
+    const { files, options: clientOptions } = req.body;
+
+    if (!files || !Array.isArray(files) || files.length === 0) {
+      return res.status(400).json({
+        success: false,
+        error: 'Invalid request: "files" array is required'
+      });
+    }
+
+    const options = getDefaultTransformOptions(clientOptions || {});
+
+    const normalizedFiles = files.map(f => ({
+      path: f.path || 'UnknownFile.kt',
+      language: f.language || 'kotlin',
+      content: f.content
+    }));
+
+    const analysis = await analyzeProject(normalizedFiles, options);
+
+    return res.json({
+      success: true,
+      analysis
+    });
+
+  } catch (error) {
+    logger.error(`Analysis error: ${error.message}`);
     return res.status(500).json({
       success: false,
-      error: 'An unexpected error occurred',
-      details: process.env.NODE_ENV === 'development' ? error.message : 'Please try again later'
+      error: error.message
     });
   }
 });
 
-// Transform code with streaming (SSE)
+// ---------------------------------------------------------
+// STREAMING TRANSFORM ENDPOINT (Single-File SSE)
+// ---------------------------------------------------------
 app.post('/transformCode/stream', async (req, res) => {
   try {
-    logger.info('Received streaming transformation request');
+    const { files, instructions, options: clientOptions } = req.body;
 
-    const { code, instructions } = req.body;
-
-    // Validation
-    if (!code || typeof code !== 'string') {
-      logger.warn('Invalid streaming request: missing or invalid code field');
+    if (!files || !Array.isArray(files) || files.length === 0) {
       return res.status(400).json({
         success: false,
-        error: 'Invalid request: "code" field is required and must be a string'
+        error: 'Invalid request: "files" array is required'
       });
     }
 
     if (!instructions || typeof instructions !== 'string') {
-      logger.warn('Invalid streaming request: missing or invalid instructions field');
       return res.status(400).json({
         success: false,
-        error: 'Invalid request: "instructions" field is required and must be a string'
+        error: 'Invalid request: "instructions" must be a string'
       });
     }
 
-    logger.info('Starting streaming transformation');
+    const mergedOptions = getDefaultTransformOptions(clientOptions || {});
 
-    // Transform the code
-    const result = await handleSingleFile(code, instructions);
+    const primaryFile = files[0];
 
-    if (!result.success) {
-      return res.status(500).json({
+    if (!primaryFile.code_b64) {
+      return res.status(400).json({
         success: false,
-        error: 'Transformation failed',
-        details: result.error || 'Unknown error'
+        error: 'Invalid request: file must include "code_b64"'
       });
     }
 
-    // Stream the transformed code
-    await streamTransformedCode(res, result.transformedCode);
-    
-    logger.info('Streaming transformation completed');
+    const code = Buffer.from(primaryFile.code_b64, 'base64').toString('utf8');
+
+    const fileObjects = [
+      {
+        path: primaryFile.path || 'MainActivity.kt',
+        language: primaryFile.language || 'kotlin',
+        content: code
+      }
+    ];
+
+    const systemPrompt = buildSystemPrompt(mergedOptions);
+    const userPrompt = buildUserPrompt(fileObjects, instructions, mergedOptions);
+    const messages = buildMessages(systemPrompt, userPrompt);
+
+    // SSE headers
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+
+    await runCodexiaTransformStream(messages, mergedOptions, token => {
+      res.write(`data: ${token}\n\n`);
+    });
+
+    res.write('data: [END]\n\n');
+    res.end();
+
   } catch (error) {
-    logger.error(`Streaming error: ${error.message}`, { stack: error.stack });
-    
+    console.error('Streaming error:', error.message);
+
     if (!res.headersSent) {
       return res.status(500).json({
         success: false,
@@ -247,34 +278,9 @@ app.post('/transformCode/stream', async (req, res) => {
   }
 });
 
-// Error handling middleware
-app.use((error, req, res, next) => {
-  logger.error(`Express error handler: ${error.message}`, { stack: error.stack });
-  
-  if (error instanceof multer.MulterError) {
-    if (error.code === 'LIMIT_FILE_SIZE') {
-      return res.status(400).json({
-        success: false,
-        error: 'File size exceeds maximum allowed size of 10MB',
-        details: 'Please upload a smaller file'
-      });
-    }
-    return res.status(400).json({
-      success: false,
-      error: 'File upload error',
-      details: error.message
-    });
-  }
-
-  return res.status(500).json({
-    success: false,
-    error: 'Internal server error',
-    details: process.env.NODE_ENV === 'development' ? error.message : 'Please try again later'
-  });
-});
-
-// Start server
+// ---------------------------------------------------------
+// START SERVER
+// ---------------------------------------------------------
 app.listen(PORT, () => {
   logger.info(`Codexia backend is running on port ${PORT}`);
-  logger.info(`Environment: ${process.env.NODE_ENV || 'development'}`);
 });
