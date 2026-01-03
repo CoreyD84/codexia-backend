@@ -14,8 +14,7 @@ const {
   buildMessages
 } = require('./codexiaEngine/codexiaEngine');
 
-const { buildSystemPrompt } = require('./prompt/buildSystemPrompt');
-const { buildUserPrompt } = require('./prompt/buildUserPrompt');
+// Removed imports for buildSystemPrompt/buildUserPrompt to use inlined versions below
 
 // NEW: Analyzer
 const { analyzeProject } = require('./utils/analyzeProject');
@@ -39,12 +38,10 @@ app.use(express.json({ limit: '10mb' }));
 // AUTO‑BASE64 NORMALIZER
 // ---------------------------------------------------------
 function normalizeFile(f) {
-  // If raw content exists → convert to base64
   if (f.content && !f.code_b64) {
     f.code_b64 = Buffer.from(f.content, "utf8").toString("base64");
   }
 
-  // If only base64 exists → decode to content
   if (!f.content && f.code_b64) {
     f.content = Buffer.from(f.code_b64, "base64").toString("utf8");
   }
@@ -62,109 +59,53 @@ function normalizeFile(f) {
 }
 
 // ---------------------------------------------------------
-// ROOT
+// ROOT, HEALTH & VERSION
 // ---------------------------------------------------------
-app.get('/', (req, res) => {
-  res.json({
-    service: SERVICE_NAME,
-    version: SERVICE_VERSION,
-    status: 'running'
-  });
-});
+app.get('/', (req, res) => res.json({ service: SERVICE_NAME, version: SERVICE_VERSION, status: 'running' }));
+app.get('/health', (req, res) => res.json({ status: 'ok', uptimeMs: process.uptime() * 1000 }));
+app.get('/version', (req, res) => res.json({ service: SERVICE_NAME, version: SERVICE_VERSION, nodeVersion: process.version }));
 
 // ---------------------------------------------------------
-// HEALTH & VERSION
-// ---------------------------------------------------------
-app.get('/health', (req, res) => {
-  res.json({
-    status: 'ok',
-    service: SERVICE_NAME,
-    version: SERVICE_VERSION,
-    engineVersion: ENGINE_VERSION,
-    uptimeMs: process.uptime() * 1000,
-    timestamp: new Date().toISOString()
-  });
-});
-
-app.get('/version', (req, res) => {
-  res.json({
-    service: SERVICE_NAME,
-    version: SERVICE_VERSION,
-    engineVersion: ENGINE_VERSION,
-    nodeVersion: process.version,
-    env: process.env.NODE_ENV || 'development'
-  });
-});
-
-// ---------------------------------------------------------
-// MAIN TRANSFORM ENDPOINT (ZIP, GitHub, JSON Multi-File)
+// MAIN TRANSFORM ENDPOINT
 // ---------------------------------------------------------
 app.post('/transformCode', upload.single('file'), async (req, res) => {
   const startTime = Date.now();
-
   try {
     logger.info('Received transformation request');
 
-    // ZIP upload
     if (req.file) {
       const files = await handleZipUpload(req.file);
-      const instructions = req.body.instructions || 'Convert to SwiftUI';
-
-      const results = await transformMultipleFiles(files, instructions);
-
-      return res.json({
-        success: true,
-        filesProcessed: files.length,
-        results,
-        duration: `${Date.now() - startTime}ms`
-      });
+      const results = await transformMultipleFiles(files, req.body.instructions || 'Convert to SwiftUI');
+      return res.json({ success: true, filesProcessed: files.length, results, duration: `${Date.now() - startTime}ms` });
     }
 
-    // GitHub URL
     if (req.body.githubUrl) {
       const files = await handleGitHubUrl(req.body.githubUrl);
-      const instructions = req.body.instructions || 'Convert to SwiftUI';
-
-      const results = await transformMultipleFiles(files, instructions);
-
-      return res.json({
-        success: true,
-        filesProcessed: files.length,
-        results,
-        duration: `${Date.now() - startTime}ms`
-      });
+      const results = await transformMultipleFiles(files, req.body.instructions || 'Convert to SwiftUI');
+      return res.json({ success: true, filesProcessed: files.length, results, duration: `${Date.now() - startTime}ms` });
     }
 
-    // JSON Multi-File Mode
     const { files, instructions, options: clientOptions } = req.body;
+    try {
+      console.log("DEBUG: Received file length:", files?.[0]?.content?.length);
+    } catch (e) {
+      console.log("DEBUG: Could not read file length:", e.message);
+    }
 
     if (!files || !Array.isArray(files) || files.length === 0) {
       return res.status(400).json({ success: false, error: 'No files provided' });
     }
 
     const mergedOptions = getDefaultTransformOptions(clientOptions || {});
-
-    // Normalize all files (auto Base64 conversion)
     const normalizedFiles = files.map(normalizeFile);
-
-    const result = await transformMultipleFiles(
-      normalizedFiles,
-      instructions,
-      mergedOptions
-    );
+    const result = await transformMultipleFiles(normalizedFiles, instructions, mergedOptions);
 
     return res.json({
       success: result.success,
       filesTransformed: result.filesTransformed,
-      sequentialCount: result.sequentialCount,
-      parallelCount: result.parallelCount,
-      projectContext: result.projectContext,
       results: result.results,
-      parallelErrors: result.parallelErrors,
-      optionsUsed: mergedOptions,
       duration: `${Date.now() - startTime}ms`
     });
-
   } catch (error) {
     logger.error(`Transform error: ${error.message}`);
     return res.status(500).json({ success: false, error: error.message });
@@ -172,36 +113,21 @@ app.post('/transformCode', upload.single('file'), async (req, res) => {
 });
 
 // ---------------------------------------------------------
-// PROJECT ANALYSIS ENDPOINT
+// PROJECT ANALYSIS
 // ---------------------------------------------------------
 app.post('/analyze', async (req, res) => {
   try {
     const { files, options: clientOptions } = req.body;
-
     if (!files || !Array.isArray(files) || files.length === 0) {
-      return res.status(400).json({
-        success: false,
-        error: 'Invalid request: "files" array is required'
-      });
+      return res.status(400).json({ success: false, error: 'Invalid request: "files" array is required' });
     }
-
     const options = getDefaultTransformOptions(clientOptions || {});
-
     const normalizedFiles = files.map(normalizeFile);
-
     const analysis = await analyzeProject(normalizedFiles, options);
-
-    return res.json({
-      success: true,
-      analysis
-    });
-
+    return res.json({ success: true, analysis });
   } catch (error) {
     logger.error(`Analysis error: ${error.message}`);
-    return res.status(500).json({
-      success: false,
-      error: error.message
-    });
+    return res.status(500).json({ success: false, error: error.message });
   }
 });
 
@@ -211,26 +137,12 @@ app.post('/analyze', async (req, res) => {
 app.post('/debugTransformOnce', async (req, res) => {
   try {
     console.log("DEBUG ONESHOT: Body:", JSON.stringify(req.body).slice(0, 800));
-
     const files = req.body.files || [];
-    const instructions = req.body.instructions || "Convert this Kotlin to idiomatic SwiftUI.";
-
-    if (!files.length || !files[0].content) {
-      return res.status(400).json({ error: "No file content provided" });
-    }
-
+    if (!files.length || !files[0].content) return res.status(400).json({ error: "No file content provided" });
     const combinedSource = files.map(f => f.content).join('\n\n');
-
-    // TODO: replace this with your real non-streaming engine call
-    // For now, we just echo back a mocked transform so you can see the path is correct.
     const fakeSwiftUI = `// DEBUG SWIFTUI OUTPUT\n// Path: ${files[0].path || "Unknown"}\n\n// Kotlin length: ${combinedSource.length}\n`;
-
     console.log("DEBUG ONESHOT: Returning Swift length:", fakeSwiftUI.length);
-
-    return res.json({
-      success: true,
-      swiftui: fakeSwiftUI,
-    });
+    return res.json({ success: true, swiftui: fakeSwiftUI });
   } catch (err) {
     console.error("DEBUG ONESHOT ERROR:", err);
     return res.status(500).json({ error: "Internal debug error" });
@@ -238,7 +150,7 @@ app.post('/debugTransformOnce', async (req, res) => {
 });
 
 // ---------------------------------------------------------
-// STREAMING TRANSFORM ENDPOINT (Single-File SSE)
+// STREAMING TRANSFORM ENDPOINT (SSE)
 // ---------------------------------------------------------
 app.post('/transformCode/stream', async (req, res) => {
   console.log("DEBUG STREAM: Raw body received:", JSON.stringify(req.body).slice(0, 500));
@@ -246,34 +158,24 @@ app.post('/transformCode/stream', async (req, res) => {
     const { files, instructions, options: clientOptions } = req.body;
 
     if (!files || !Array.isArray(files) || files.length === 0) {
-      return res.status(400).json({
-        success: false,
-        error: 'Invalid request: "files" array is required'
-      });
-    }
-
-    if (!instructions || typeof instructions !== 'string') {
-      return res.status(400).json({
-        success: false,
-        error: 'Invalid request: "instructions" must be a string'
-      });
+      return res.status(400).json({ success: false, error: 'Invalid request: "files" array is required' });
     }
 
     const mergedOptions = getDefaultTransformOptions(clientOptions || {});
-
-    // Normalize the primary file (auto Base64 conversion)
     const primary = normalizeFile(files[0]);
 
-    const fileObjects = [
-      {
-        path: primary.path,
-        language: primary.language,
-        content: primary.content
-      }
-    ];
+    // --- CODEXIA PROMPT LOGIC ---
+    const systemPrompt = `You are Codexia, an expert code transformation engine.
+Your job is to convert Android Jetpack Compose Kotlin UI code into idiomatic SwiftUI code.
+Return ONLY Swift code. No explanations. No markdown. No commentary.
+If the input is empty or unclear, ask for clarification.`;
 
-    const systemPrompt = buildSystemPrompt(mergedOptions);
-    const userPrompt = buildUserPrompt(fileObjects, instructions, mergedOptions);
+    const userPrompt = `Convert the following Kotlin Jetpack Compose code into SwiftUI.
+Return ONLY Swift code.
+
+Kotlin:
+${primary.content}`;
+
     const messages = buildMessages(systemPrompt, userPrompt);
 
     // SSE headers
@@ -290,20 +192,12 @@ app.post('/transformCode/stream', async (req, res) => {
 
   } catch (error) {
     console.error('Streaming error:', error.message);
-
     if (!res.headersSent) {
-      return res.status(500).json({
-        success: false,
-        error: 'Streaming transformation failed',
-        details: error.message
-      });
+      return res.status(500).json({ success: false, error: 'Streaming transformation failed', details: error.message });
     }
   }
 });
 
-// ---------------------------------------------------------
-// START SERVER
-// ---------------------------------------------------------
 app.listen(PORT, () => {
   logger.info(`Codexia backend is running on port ${PORT}`);
 });
