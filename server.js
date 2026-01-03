@@ -6,7 +6,6 @@ const multer = require('multer');
 
 const logger = require('./utils/logger');
 const { handleZipUpload, handleGitHubUrl, MAX_FILE_SIZE } = require('./utils/fileHandlers');
-const { handleSingleFile } = require('./utils/codeTransformers');
 const { transformMultipleFiles } = require('./utils/multiFileOrchestrator');
 const { getDefaultTransformOptions } = require('./types/TransformOptions');
 
@@ -35,6 +34,32 @@ const upload = multer({
 
 app.use(cors());
 app.use(express.json({ limit: '10mb' }));
+
+// ---------------------------------------------------------
+// AUTO‑BASE64 NORMALIZER
+// ---------------------------------------------------------
+function normalizeFile(f) {
+  // If raw content exists → convert to base64
+  if (f.content && !f.code_b64) {
+    f.code_b64 = Buffer.from(f.content, "utf8").toString("base64");
+  }
+
+  // If only base64 exists → decode to content
+  if (!f.content && f.code_b64) {
+    f.content = Buffer.from(f.code_b64, "base64").toString("utf8");
+  }
+
+  if (!f.content) {
+    throw new Error(`File "${f.path}" is missing both "content" and "code_b64"`);
+  }
+
+  return {
+    path: f.path || "UnknownFile.kt",
+    language: f.language || "kotlin",
+    content: f.content,
+    code_b64: f.code_b64
+  };
+}
 
 // ---------------------------------------------------------
 // ROOT
@@ -80,9 +105,7 @@ app.post('/transformCode', upload.single('file'), async (req, res) => {
   try {
     logger.info('Received transformation request');
 
-    // ---------------------------------------------------------
     // ZIP upload
-    // ---------------------------------------------------------
     if (req.file) {
       const files = await handleZipUpload(req.file);
       const instructions = req.body.instructions || 'Convert to SwiftUI';
@@ -97,9 +120,7 @@ app.post('/transformCode', upload.single('file'), async (req, res) => {
       });
     }
 
-    // ---------------------------------------------------------
     // GitHub URL
-    // ---------------------------------------------------------
     if (req.body.githubUrl) {
       const files = await handleGitHubUrl(req.body.githubUrl);
       const instructions = req.body.instructions || 'Convert to SwiftUI';
@@ -114,9 +135,7 @@ app.post('/transformCode', upload.single('file'), async (req, res) => {
       });
     }
 
-    // ---------------------------------------------------------
     // JSON Multi-File Mode
-    // ---------------------------------------------------------
     const { files, instructions, options: clientOptions } = req.body;
 
     if (!files || !Array.isArray(files) || files.length === 0) {
@@ -125,26 +144,9 @@ app.post('/transformCode', upload.single('file'), async (req, res) => {
 
     const mergedOptions = getDefaultTransformOptions(clientOptions || {});
 
-    // Accept BOTH raw content and base64
-    const normalizedFiles = files.map(f => {
-      let content = f.content;
+    // Normalize all files (auto Base64 conversion)
+    const normalizedFiles = files.map(normalizeFile);
 
-      if (!content && f.code_b64) {
-        content = Buffer.from(f.code_b64, 'base64').toString('utf8');
-      }
-
-      if (!content) {
-        throw new Error(`File "${f.path}" is missing both "content" and "code_b64"`);
-      }
-
-      return {
-        path: f.path || 'UnknownFile.kt',
-        language: f.language || 'kotlin',
-        content
-      };
-    });
-
-    // MULTI-FILE TRANSFORMATION
     const result = await transformMultipleFiles(
       normalizedFiles,
       instructions,
@@ -170,7 +172,7 @@ app.post('/transformCode', upload.single('file'), async (req, res) => {
 });
 
 // ---------------------------------------------------------
-// PROJECT ANALYSIS ENDPOINT (NEW)
+// PROJECT ANALYSIS ENDPOINT
 // ---------------------------------------------------------
 app.post('/analyze', async (req, res) => {
   try {
@@ -185,11 +187,7 @@ app.post('/analyze', async (req, res) => {
 
     const options = getDefaultTransformOptions(clientOptions || {});
 
-    const normalizedFiles = files.map(f => ({
-      path: f.path || 'UnknownFile.kt',
-      language: f.language || 'kotlin',
-      content: f.content
-    }));
+    const normalizedFiles = files.map(normalizeFile);
 
     const analysis = await analyzeProject(normalizedFiles, options);
 
@@ -230,22 +228,14 @@ app.post('/transformCode/stream', async (req, res) => {
 
     const mergedOptions = getDefaultTransformOptions(clientOptions || {});
 
-    const primaryFile = files[0];
-
-    if (!primaryFile.code_b64) {
-      return res.status(400).json({
-        success: false,
-        error: 'Invalid request: file must include "code_b64"'
-      });
-    }
-
-    const code = Buffer.from(primaryFile.code_b64, 'base64').toString('utf8');
+    // Normalize the primary file (auto Base64 conversion)
+    const primary = normalizeFile(files[0]);
 
     const fileObjects = [
       {
-        path: primaryFile.path || 'MainActivity.kt',
-        language: primaryFile.language || 'kotlin',
-        content: code
+        path: primary.path,
+        language: primary.language,
+        content: primary.content
       }
     ];
 
