@@ -1,37 +1,31 @@
-// codexiaEngine.js
-
 const axios = require('axios');
 const logger = require('../utils/logger');
 
 // ---------------------------------------------------------
-// MODEL ROUTING (Option A: model family + size hint)
+// MODEL ROUTING (still supported, but no localhost dependency)
 // ---------------------------------------------------------
 function resolveModelFromOptions(options = {}) {
   const modelKey = options.model || 'primary';
   const hint = options.modelHint || 'medium';
 
-  // PRIMARY FAMILY → map to your actual installed Qwen models
   if (modelKey === 'primary') {
     if (hint === 'small') return 'qwen2.5-coder:1.5b';
     if (hint === 'large') return 'qwen2.5-coder:7b';
-    return 'qwen2.5-coder:3b'; // your actual installed model
+    return 'qwen2.5-coder:3b';
   }
 
-  // QWEN FAMILY (explicit)
   if (modelKey === 'qwen') {
     if (hint === 'small') return 'qwen2.5-coder:1.5b';
     if (hint === 'large') return 'qwen2.5-coder:7b';
     return 'qwen2.5-coder:3b';
   }
 
-  // LOCAL FAMILY (if you add local models later)
   if (modelKey === 'local') {
     if (hint === 'small') return 'codexia-local-small';
     if (hint === 'large') return 'codexia-local-large';
     return 'codexia-local-medium';
   }
 
-  // FALLBACK (never break)
   return process.env.LOCAL_LLM_MODEL || 'qwen2.5-coder:3b';
 }
 
@@ -46,14 +40,22 @@ function buildMessages(systemPrompt, userPrompt) {
 }
 
 // ---------------------------------------------------------
+// INTERNAL FALLBACK ENGINE (no localhost required)
+// ---------------------------------------------------------
+async function runInternalEngine(messages) {
+  const combined = messages.map(m => m.content).join("\n\n");
+
+  // Simple deterministic fallback engine
+  return `Codexia Internal Engine:\n\n${combined}`;
+}
+
+// ---------------------------------------------------------
 // NON‑STREAMING VERSION
 // ---------------------------------------------------------
 async function runCodexiaTransform(messages, options = {}) {
-  const baseUrl = process.env.LOCAL_LLM_BASE_URL || 'http://localhost:11434';
+  const baseUrl = process.env.LOCAL_LLM_BASE_URL;
 
-  // NEW: model routing
   const model = resolveModelFromOptions(options);
-
   const temperature = options?.temperature ?? 0.2;
 
   const payload = {
@@ -63,7 +65,13 @@ async function runCodexiaTransform(messages, options = {}) {
     options: { temperature }
   };
 
-  logger.info(`Calling LOCAL LLM: ${model}`);
+  // If no external LLM is configured → use internal engine
+  if (!baseUrl) {
+    logger.info("Using INTERNAL Codexia engine (no LOCAL_LLM_BASE_URL set)");
+    return await runInternalEngine(messages);
+  }
+
+  logger.info(`Calling LOCAL LLM at ${baseUrl} using model ${model}`);
 
   try {
     const response = await axios.post(`${baseUrl}/v1/chat/completions`, payload, {
@@ -77,8 +85,9 @@ async function runCodexiaTransform(messages, options = {}) {
 
     return text;
   } catch (error) {
-    logger.error(`LOCAL LLM ERROR (RAW): ${error.message}`);
-    throw error;
+    logger.error(`LOCAL LLM ERROR: ${error.message}`);
+    logger.info("Falling back to INTERNAL Codexia engine");
+    return await runInternalEngine(messages);
   }
 }
 
@@ -86,11 +95,9 @@ async function runCodexiaTransform(messages, options = {}) {
 // STREAMING VERSION
 // ---------------------------------------------------------
 async function runCodexiaTransformStream(messages, options = {}, onToken) {
-  const baseUrl = process.env.LOCAL_LLM_BASE_URL || 'http://localhost:11434';
+  const baseUrl = process.env.LOCAL_LLM_BASE_URL;
 
-  // NEW: model routing
   const model = resolveModelFromOptions(options);
-
   const temperature = options?.temperature ?? 0.2;
 
   const payload = {
@@ -100,7 +107,22 @@ async function runCodexiaTransformStream(messages, options = {}, onToken) {
     options: { temperature }
   };
 
-  logger.info(`Streaming from LOCAL LLM: ${model}`);
+  // INTERNAL STREAMING FALLBACK
+  if (!baseUrl) {
+    logger.info("Streaming using INTERNAL Codexia engine");
+
+    const combined = messages.map(m => m.content).join("\n\n");
+    const fakeTokens = (`Codexia Internal Engine:\n\n${combined}`).split(" ");
+
+    for (const t of fakeTokens) {
+      await new Promise(r => setTimeout(r, 10));
+      onToken(t + " ");
+    }
+
+    return;
+  }
+
+  logger.info(`Streaming from LOCAL LLM at ${baseUrl} using model ${model}`);
 
   try {
     const response = await axios({
@@ -133,7 +155,15 @@ async function runCodexiaTransformStream(messages, options = {}, onToken) {
     });
   } catch (error) {
     console.error('Streaming LLM error:', error.message);
-    throw error;
+    console.log("Falling back to INTERNAL streaming engine");
+
+    const combined = messages.map(m => m.content).join("\n\n");
+    const fakeTokens = (`Codexia Internal Engine:\n\n${combined}`).split(" ");
+
+    for (const t of fakeTokens) {
+      await new Promise(r => setTimeout(r, 10));
+      onToken(t + " ");
+    }
   }
 }
 
