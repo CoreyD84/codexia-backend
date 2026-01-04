@@ -3,6 +3,7 @@
 /**
  * System Prompt (Multi-File + Full Project Context + Presets + Model Awareness)
  * Codexia Engine - Architecture-Faithful Transformation
+ * v2.1 - Enhanced Syntax Enforcement & Project Context Restoration
  */
 
 function buildSystemPrompt(options = {}, projectContext = null) {
@@ -78,10 +79,18 @@ ${contextBlock}
 7. **Do NOT simplify or omit logic.**
 8. **Do NOT hallucinate APIs.**
 
+# BANNED PATTERNS (DO NOT USE)
+- Never use "LazyRow" or "LazyColumn".
+- Never use "Modifier." or "modifier:" syntax.
+- Never use "AlertDialog" as a custom Struct; use the native ".alert()" modifier.
+- Never use ".font(.bodySmall)" or ".font(.bodyLarge)"; use native SwiftUI equivalents like ".caption" or ".body".
+- Never use "$1" in a closure unless it actually takes two arguments.
+- Never use ".foregroundColor()" or ".fontWeight()" inside a Text initializer; these must be trailing modifiers.
+
 # SWIFTUI SYNTAX & TYPE MAPPING
-1. **Layout Mapping**: Column -> VStack, Row -> HStack, Box -> ZStack, LazyColumn -> List or ScrollView { LazyVStack }.
+1. **Layout Mapping**: Column -> VStack, Row -> HStack, Box -> ZStack, LazyColumn -> List or ScrollView { LazyVStack }, LazyRow -> ScrollView(.horizontal) { LazyHStack }.
 2. **Color Mapping**: Never output "Color(0x...)". Use "Color(hex: \"...\")".
-3. **Closure Mapping**: Ensure shorthand arguments start at $0. Never use $1 for a single-argument closure.
+3. **Closure Mapping**: Ensure shorthand arguments start at $0. 
 4. **Modifier Mapping**: Modifier.fillMaxSize() -> .frame(maxWidth: .infinity, maxHeight: .infinity).
 5. **Component Mapping**: AlertDialog -> .alert() modifier, CircularProgressIndicator -> ProgressView().
 
@@ -99,7 +108,7 @@ ${contextBlock}
 - Do NOT include commentary or explanations.
 
 # FINAL INSTRUCTION
-Transform the provided file with perfect fidelity, using the project context to maintain cross-file consistency. Every Swift statement must appear on its own line with correct indentation.
+Transform the provided file with perfect fidelity, using the project context to maintain cross-file consistency. Every Swift statement must appear on its own line with correct indentation. No traces of Android syntax should remain.
 `;
 }
 
