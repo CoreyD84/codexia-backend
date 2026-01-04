@@ -14,8 +14,6 @@ const {
   buildMessages
 } = require('./codexiaEngine/codexiaEngine');
 
-// Removed imports for buildSystemPrompt/buildUserPrompt to use inlined versions below
-
 // NEW: Analyzer
 const { analyzeProject } = require('./utils/analyzeProject');
 
@@ -23,8 +21,8 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 
 const SERVICE_NAME = 'Codexia Backend';
-const SERVICE_VERSION = '2.1.0';
-const ENGINE_VERSION = 'codexiaEngine-v1';
+const SERVICE_VERSION = '2.1.1'; // Bumped for validation
+const ENGINE_VERSION = 'codexiaEngine-v1-verified';
 
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -66,31 +64,29 @@ app.get('/health', (req, res) => res.json({ status: 'ok', uptimeMs: process.upti
 app.get('/version', (req, res) => res.json({ service: SERVICE_NAME, version: SERVICE_VERSION, nodeVersion: process.version }));
 
 // ---------------------------------------------------------
-// MAIN TRANSFORM ENDPOINT
+// MAIN TRANSFORM ENDPOINT (The Multi-File Verified Pipeline)
 // ---------------------------------------------------------
 app.post('/transformCode', upload.single('file'), async (req, res) => {
   const startTime = Date.now();
   try {
-    logger.info('Received transformation request');
+    logger.info('--- NEW TRANSFORMATION REQUEST RECEIVED ---');
 
+    // 1. Handle Zip File Uploads
     if (req.file) {
       const files = await handleZipUpload(req.file);
-      const results = await transformMultipleFiles(files, req.body.instructions || 'Convert to SwiftUI');
-      return res.json({ success: true, filesProcessed: files.length, results, duration: `${Date.now() - startTime}ms` });
+      const result = await transformMultipleFiles(files, req.body.instructions || 'Convert to SwiftUI');
+      return res.json({ ...result, duration: `${Date.now() - startTime}ms` });
     }
 
+    // 2. Handle GitHub Repo URLs
     if (req.body.githubUrl) {
       const files = await handleGitHubUrl(req.body.githubUrl);
-      const results = await transformMultipleFiles(files, req.body.instructions || 'Convert to SwiftUI');
-      return res.json({ success: true, filesProcessed: files.length, results, duration: `${Date.now() - startTime}ms` });
+      const result = await transformMultipleFiles(files, req.body.instructions || 'Convert to SwiftUI');
+      return res.json({ ...result, duration: `${Date.now() - startTime}ms` });
     }
 
+    // 3. Handle JSON Raw File Array (Your curl command)
     const { files, instructions, options: clientOptions } = req.body;
-    try {
-      console.log("DEBUG: Received file length:", files?.[0]?.content?.length);
-    } catch (e) {
-      console.log("DEBUG: Could not read file length:", e.message);
-    }
 
     if (!files || !Array.isArray(files) || files.length === 0) {
       return res.status(400).json({ success: false, error: 'No files provided' });
@@ -98,6 +94,8 @@ app.post('/transformCode', upload.single('file'), async (req, res) => {
 
     const mergedOptions = getDefaultTransformOptions(clientOptions || {});
     const normalizedFiles = files.map(normalizeFile);
+
+    // CALL THE ORCHESTRATOR (This triggers the Fix-Loop and Sanitizer)
     const result = await transformMultipleFiles(normalizedFiles, instructions, mergedOptions);
 
     return res.json({
@@ -106,6 +104,7 @@ app.post('/transformCode', upload.single('file'), async (req, res) => {
       results: result.results,
       duration: `${Date.now() - startTime}ms`
     });
+
   } catch (error) {
     logger.error(`Transform error: ${error.message}`);
     return res.status(500).json({ success: false, error: error.message });
@@ -132,31 +131,11 @@ app.post('/analyze', async (req, res) => {
 });
 
 // ---------------------------------------------------------
-// DEBUG ONESHOT ENDPOINT
-// ---------------------------------------------------------
-app.post('/debugTransformOnce', async (req, res) => {
-  try {
-    console.log("DEBUG ONESHOT: Body:", JSON.stringify(req.body).slice(0, 800));
-    const files = req.body.files || [];
-    if (!files.length || !files[0].content) return res.status(400).json({ error: "No file content provided" });
-    const combinedSource = files.map(f => f.content).join('\n\n');
-    const fakeSwiftUI = `// DEBUG SWIFTUI OUTPUT\n// Path: ${files[0].path || "Unknown"}\n\n// Kotlin length: ${combinedSource.length}\n`;
-    console.log("DEBUG ONESHOT: Returning Swift length:", fakeSwiftUI.length);
-    return res.json({ success: true, swiftui: fakeSwiftUI });
-  } catch (err) {
-    console.error("DEBUG ONESHOT ERROR:", err);
-    return res.status(500).json({ error: "Internal debug error" });
-  }
-});
-
-// ---------------------------------------------------------
 // STREAMING TRANSFORM ENDPOINT (SSE)
 // ---------------------------------------------------------
 app.post('/transformCode/stream', async (req, res) => {
-  console.log("DEBUG STREAM: Raw body received:", JSON.stringify(req.body).slice(0, 500));
   try {
     const { files, instructions, options: clientOptions } = req.body;
-
     if (!files || !Array.isArray(files) || files.length === 0) {
       return res.status(400).json({ success: false, error: 'Invalid request: "files" array is required' });
     }
@@ -164,21 +143,13 @@ app.post('/transformCode/stream', async (req, res) => {
     const mergedOptions = getDefaultTransformOptions(clientOptions || {});
     const primary = normalizeFile(files[0]);
 
-    // --- CODEXIA PROMPT LOGIC ---
-    const systemPrompt = `You are Codexia, an expert code transformation engine.
-Your job is to convert Android Jetpack Compose Kotlin UI code into idiomatic SwiftUI code.
-Return ONLY Swift code. No explanations. No markdown. No commentary.
-If the input is empty or unclear, ask for clarification.`;
+    // System prompt for streaming (fast, no validation loop possible here)
+    const systemPrompt = `You are Codexia. Convert Kotlin Jetpack Compose to SwiftUI. 
+Return ONLY pure Swift code. No markdown fences. No @Composable keywords.`;
 
-    const userPrompt = `Convert the following Kotlin Jetpack Compose code into SwiftUI.
-Return ONLY Swift code.
-
-Kotlin:
-${primary.content}`;
-
+    const userPrompt = `Transform this Kotlin code to SwiftUI:\n\n${primary.content}`;
     const messages = buildMessages(systemPrompt, userPrompt);
 
-    // SSE headers
     res.setHeader('Content-Type', 'text/event-stream');
     res.setHeader('Cache-Control', 'no-cache');
     res.setHeader('Connection', 'keep-alive');
@@ -189,15 +160,22 @@ ${primary.content}`;
 
     res.write('data: [END]\n\n');
     res.end();
-
   } catch (error) {
     console.error('Streaming error:', error.message);
     if (!res.headersSent) {
-      return res.status(500).json({ success: false, error: 'Streaming transformation failed', details: error.message });
+      res.status(500).json({ success: false, error: error.message });
     }
   }
 });
 
+// ---------------------------------------------------------
+// SERVER STARTUP
+// ---------------------------------------------------------
 app.listen(PORT, () => {
-  logger.info(`Codexia backend is running on port ${PORT}`);
+  console.log('==============================================');
+  console.log(`🚀 ${SERVICE_NAME} v${SERVICE_VERSION} STARTED`);
+  console.log(`🛠️ ENGINE: ${ENGINE_VERSION}`);
+  console.log(`📍 PORT: ${PORT}`);
+  console.log(`✅ VERIFIED: Sanitizer & Swift Validator Active`);
+  console.log('==============================================');
 });

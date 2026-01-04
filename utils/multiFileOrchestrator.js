@@ -19,8 +19,8 @@ const { validateSwiftOnWindows } = require('./execsync');
  * Removes Markdown code fences and whitespace.
  */
 function sanitizeSwiftCode(rawCode) {
+    console.log("--- DEBUG: SANITIZER IS RUNNING ---"); // Add this line
     if (!rawCode) return "";
-    // Remove triple backticks and any text immediately following them (like 'swift')
     return rawCode
         .replace(/```[a-z]*/gi, '')
         .replace(/```/g, '')
