@@ -94,75 +94,47 @@ async function runCodexiaTransform(messages, options = {}) {
 // ---------------------------------------------------------
 // STREAMING VERSION
 // ---------------------------------------------------------
-async function runCodexiaTransformStream(messages, options = {}, onToken) {
-  const baseUrl = process.env.LOCAL_LLM_BASE_URL;
+async function runCodexiaTransformStream(messages, options, onToken) {
+  const response = await fetch(`${process.env.LOCAL_LLM_BASE_URL}/v1/chat/completions`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "Authorization": `Bearer ${process.env.LOCAL_LLM_API_KEY}`
+    },
+    body: JSON.stringify({
+      model: process.env.LOCAL_LLM_MODEL || resolveModelFromOptions(options),
+      messages,
+      stream: true,
+      temperature: options?.temperature ?? 0.2
+    })
+  });
 
-  const model = resolveModelFromOptions(options);
-  const temperature = options?.temperature ?? 0.2;
-
-  const payload = {
-    model,
-    messages,
-    stream: true,
-    options: { temperature }
-  };
-
-  // INTERNAL STREAMING FALLBACK
-  if (!baseUrl) {
-    logger.info("Streaming using INTERNAL Codexia engine");
-
-    const combined = messages.map(m => m.content).join("\n\n");
-    const fakeTokens = (`Codexia Internal Engine:\n\n${combined}`).split(" ");
-
-    for (const t of fakeTokens) {
-      await new Promise(r => setTimeout(r, 10));
-      onToken(t + " ");
-    }
-
-    return;
+  if (!response.ok) {
+    throw new Error(`LLM request failed: ${response.status}`);
   }
 
-  logger.info(`Streaming from LOCAL LLM at ${baseUrl} using model ${model}`);
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
 
-  try {
-    const response = await axios({
-      method: 'post',
-      url: `${baseUrl}/v1/chat/completions`,
-      data: payload,
-      responseType: 'stream',
-      timeout: 300000
-    });
+  while (true) {
+    const { value, done } = await reader.read();
+    if (done) break;
 
-    response.data.on('data', chunk => {
-      try {
-        const lines = chunk.toString().split('\n').filter(Boolean);
-        for (const line of lines) {
-          const json = JSON.parse(line);
-          const token =
-            json?.choices?.[0]?.delta?.content ||
-            json?.choices?.[0]?.text ||
-            '';
+    const text = decoder.decode(value, { stream: true });
 
+    // Parse SSE chunks
+    const lines = text.split("\n");
+    for (const line of lines) {
+      if (line.startsWith("data: ")) {
+        const payload = line.replace("data: ", "").trim();
+        if (payload === "[DONE]") return;
+
+        try {
+          const json = JSON.parse(payload);
+          const token = json.choices?.[0]?.delta?.content;
           if (token) onToken(token);
-        }
-      } catch (err) {
-        console.error('Streaming parse error:', err.message);
+        } catch {}
       }
-    });
-
-    return new Promise(resolve => {
-      response.data.on('end', () => resolve());
-    });
-  } catch (error) {
-    console.error('Streaming LLM error:', error.message);
-    console.log("Falling back to INTERNAL streaming engine");
-
-    const combined = messages.map(m => m.content).join("\n\n");
-    const fakeTokens = (`Codexia Internal Engine:\n\n${combined}`).split(" ");
-
-    for (const t of fakeTokens) {
-      await new Promise(r => setTimeout(r, 10));
-      onToken(t + " ");
     }
   }
 }
