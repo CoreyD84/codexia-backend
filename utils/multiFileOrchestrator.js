@@ -9,21 +9,21 @@ const {
   runCodexiaTransform
 } = require('../codexiaEngine/codexiaEngine');
 const { getDefaultTransformOptions } = require('../types/TransformOptions');
-const logger = require('./logger') || require('../utils/logger');
+const logger = require('./logger') || { info: console.log, warn: console.warn, error: console.error };
 
 // IMPORT YOUR VALIDATOR
 const { validateSwiftOnWindows } = require('./execsync');
 
 /**
  * Aggressively cleans up LLM output.
- * Removes Markdown code fences, language tags, and weird trailing artifacts.
+ * Removes Markdown code fences and whitespace.
  */
 function sanitizeSwiftCode(rawCode) {
     if (!rawCode) return "";
+    // Remove triple backticks and any text immediately following them (like 'swift')
     return rawCode
-        .replace(/```swift/gi, '')
+        .replace(/```[a-z]*/gi, '')
         .replace(/```/g, '')
-        .replace(/^[ \t]*\n/gm, '') // Remove empty leading lines
         .trim();
 }
 
@@ -36,7 +36,8 @@ async function transformSingleFileWithContext(file, projectContext, instructions
   
   let messages = buildMessages(systemPrompt, userPrompt);
   
-  let currentContent = "";
+  let currentRawOutput = "";
+  let sanitizedContent = "";
   let attempts = 0;
   const maxAttempts = 3;
   let isVerified = false;
@@ -45,25 +46,23 @@ async function transformSingleFileWithContext(file, projectContext, instructions
     logger.info(`Attempt ${attempts + 1} for ${file.path}`);
     
     // 1. Get raw code from LLM
-    const rawOutput = await runCodexiaTransform(messages, options);
+    currentRawOutput = await runCodexiaTransform(messages, options);
     
-    // 2. STRIP BACKTICKS IMMEDIATELY (Before Validation)
-    currentContent = sanitizeSwiftCode(rawOutput);
+    // 2. IMMEDIATELY SANITIZE
+    sanitizedContent = sanitizeSwiftCode(currentRawOutput);
 
-    // 3. KOTLIN LEAK DETECTION (Case-Insensitive)
+    // 3. KOTLIN LEAK DETECTION
     const leaks = [];
-    const lowerContent = currentContent.toLowerCase();
+    const lowerContent = sanitizedContent.toLowerCase();
     
     if (lowerContent.includes("@composable")) leaks.push("@Composable");
-    if (currentContent.includes("fun ")) leaks.push("keyword 'fun'");
-    if (currentContent.includes("val ")) leaks.push("keyword 'val'");
+    if (sanitizedContent.includes("fun ")) leaks.push("keyword 'fun'");
+    if (sanitizedContent.includes("val ")) leaks.push("keyword 'val'");
     if (lowerContent.includes("remember {")) leaks.push("Compose 'remember'");
-    if (lowerContent.includes("mutableStateOf")) leaks.push("'mutableStateOf'");
 
     // 4. VALIDATE using Windows Swift Toolchain
-    const validation = validateSwiftOnWindows(currentContent);
+    const validation = validateSwiftOnWindows(sanitizedContent);
 
-    // Only pass if BOTH the compiler is happy AND no Kotlin leaked through
     if (validation.isValid && leaks.length === 0) {
       logger.info(`✅ ${file.path} passed validation.`);
       isVerified = true;
@@ -74,35 +73,30 @@ async function transformSingleFileWithContext(file, projectContext, instructions
 
       logger.warn(`❌ ${file.path} rejected. Error: ${errorDetail}`);
       
-      // 5. RE-PROMPT: The "Mean" Repair Prompt
+      // 5. RE-PROMPT
       const repairPrompt = `
-ATTENTION: Your output FAILED validation.
-- ERROR: ${errorDetail}
+ERROR: Your output is NOT valid Swift. 
+Details: ${errorDetail}
 
-REQUIRED FIXES:
-1. Change 'fun' to 'func'.
-2. Change '@Composable fun Name()' to 'struct Name: View'.
-3. Change 'val' to 'let' or '@State var'.
-4. Do NOT use Markdown backticks (\`\`\`).
-5. Output ONLY pure Swift code.
+FIX:
+- Replace '@Composable fun' with 'struct Name: View' and 'var body: some View'.
+- Replace 'fun' with 'func'.
+- ABSOLUTELY NO MARKDOWN OR BACKTICKS.
       `;
 
-      // Feed back the bad code and the error
-      messages.push({ role: 'assistant', content: rawOutput });
+      messages.push({ role: 'assistant', content: currentRawOutput });
       messages.push({ role: 'user', content: repairPrompt });
       
       attempts++;
     }
   }
 
-  // FINAL SAFETY PASS: One last sanitize to be absolutely sure
-  const finalCleaned = sanitizeSwiftCode(currentContent);
-
+  // We return the sanitizedContent to ensure backticks never reach the user
   return {
     path: file.path,
     language: file.language,
     originalContent: file.content,
-    transformedContent: finalCleaned,
+    transformedContent: sanitizedContent,
     verified: isVerified,
     attempts: attempts
   };
@@ -114,7 +108,6 @@ REQUIRED FIXES:
 async function transformSequentialFiles(files, projectContext, instructions, options) {
   const results = [];
   for (const file of files) {
-    logger.info(`Transforming SEQUENTIAL file: ${file.path}`);
     const result = await transformSingleFileWithContext(file, projectContext, instructions, options);
     results.push(result);
   }
@@ -125,7 +118,8 @@ async function transformSequentialFiles(files, projectContext, instructions, opt
  * Parallel transforms (simple files).
  */
 async function transformParallelFiles(files, projectContext, instructions, options) {
-  if (!files || files.length === 0) return [];
+  if (!files || files.length === 0) return { results: [], errors: [] };
+  
   const tasks = files.map(file =>
     transformSingleFileWithContext(file, projectContext, instructions, options)
       .then(result => ({ status: 'fulfilled', value: result }))
@@ -160,10 +154,12 @@ async function transformMultipleFiles(rawFiles, instructions, clientOptions = {}
   const sequentialResults = await transformSequentialFiles(sequential, projectContext, instructions, options);
   const { results: parallelResults, errors: parallelErrors } = await transformParallelFiles(parallel, projectContext, instructions, options);
 
+  const allResults = [...sequentialResults, ...parallelResults];
+
   return {
     success: parallelErrors.length === 0,
-    filesTransformed: sequentialResults.length + parallelResults.length,
-    results: [...sequentialResults, ...parallelResults],
+    filesTransformed: allResults.length,
+    results: allResults,
     parallelErrors
   };
 }
@@ -189,4 +185,7 @@ async function streamMultipleFiles(normalizedFiles, instructions, clientOptions,
   onToken('[END]');
 }
 
-module.exports = { transformMultipleFiles, streamMultipleFiles };
+module.exports = {
+  transformMultipleFiles,
+  streamMultipleFiles
+};
