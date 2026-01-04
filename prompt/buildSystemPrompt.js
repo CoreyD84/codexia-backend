@@ -134,6 +134,11 @@ ${allowExplanations ? '' : '- Do NOT explain your reasoning.'}
 
 # FINAL INSTRUCTION
 Transform the provided file with perfect fidelity, using the project context to maintain cross-file consistency.
+
+You must output fully formatted, properly spaced, and properly indented Swift code.
+All whitespace, indentation, and line breaks must be emitted exactly as they appear in real Swift source files.
+Never compress tokens, never remove whitespace, and never collapse lines.
+Every Swift statement must appear on its own line with correct indentation.
 `;
 }
 
