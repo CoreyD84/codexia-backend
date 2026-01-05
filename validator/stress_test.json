@@ -1,0 +1,17 @@
+{
+  "files": [
+    {
+      "path": "User.kt",
+      "content": "data class User(val id: String, val name: String, val bio: String)"
+    },
+    {
+      "path": "ProfileViewModel.kt",
+      "content": "class ProfileViewModel : ViewModel() { val user = mutableStateOf(User('1', 'Glass', 'Dev')) }"
+    },
+    {
+      "path": "ProfileScreen.kt",
+      "content": "@Composable fun ProfileScreen(vm: ProfileViewModel) { Text(vm.user.value.name) }"
+    }
+  ],
+  "instructions": "Convert this entire module to SwiftUI. Ensure the Data Model maps to a Struct and the ViewModel maps to an ObservableObject."
+}

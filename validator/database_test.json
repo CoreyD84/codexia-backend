@@ -1,0 +1,13 @@
+{
+  "files": [
+    {
+      "path": "TaskEntity.kt",
+      "content": "@Entity(tableName = 'tasks') data class TaskEntity(@PrimaryKey(autoGenerate = true) val id: Int = 0, val title: String, val isCompleted: Boolean = false)"
+    },
+    {
+      "path": "TaskDao.kt",
+      "content": "@Dao interface TaskDao { @Query('SELECT * FROM tasks') fun getAllTasks(): Flow<List<TaskEntity>>; @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun insertTask(task: TaskEntity); @Delete suspend fun deleteTask(task: TaskEntity) }"
+    }
+  ],
+  "instructions": "Convert this Room database layer to SwiftData. Map the @Entity to a @Model class and the @Dao to a repository pattern using ModelContext and Swift concurrency."
+}

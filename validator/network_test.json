@@ -1,0 +1,13 @@
+{
+  "files": [
+    {
+      "path": "ApiService.kt",
+      "content": "interface ApiService { @GET('users/{id}') suspend fun getUser(@Path('id') id: String): User }"
+    },
+    {
+      "path": "UserRepository.kt",
+      "content": "class UserRepository(private val api: ApiService) { suspend fun fetchUser(id: String) = api.getUser(id) }"
+    }
+  ],
+  "instructions": "Convert this networking layer to SwiftUI. Map the Retrofit interface to a Swift protocol and implement a URLSession-based service. Use async/await for concurrency."
+}
