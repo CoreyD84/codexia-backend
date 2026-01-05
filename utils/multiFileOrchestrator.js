@@ -4,8 +4,8 @@ const { transformCode } = require('./codeTransformers');
 const { verifySwiftCode } = require('../validator/codexiaValidator');
 
 /**
- * 📚 GOD-TIER LIBRARY PROXY LAYER
- * Maps Android infrastructure to the high-performance iOS equivalents.
+ * 📚 ARCHITECTURAL PROXY LAYER
+ * Maps Android infrastructure to high-performance iOS equivalents.
  */
 const LIBRARY_MAP = {
     "Retrofit": "URLSession + Swift Concurrency (async/await)",
@@ -16,19 +16,20 @@ const LIBRARY_MAP = {
     "Gson/Moshi": "Codable Protocols",
     "Firebase": "Firebase iOS SDK",
     "LiveData": "@Published + Combine",
-    "StateFlow": "@Observable (Swift Observation Framework)"
+    "StateFlow": "@Observable (Swift Observation Framework)",
+    "ViewModel": "@Observable Object / @StateObject"
 };
 
 /**
- * 🚀 CODEXIA PROJECT ORCHESTRATOR v8.0 (God-Tier Edition)
+ * 🚀 CODEXIA PROJECT ORCHESTRATOR v10.0 (Hardened Sanitization Edition)
  */
 async function orchestrateProjectTransform(files, baseInstructions) {
-    console.log(`\n🌟 CODEXIA PRODUCTION ENGINE: Transforming ${files.length} files with AI God-Tier logic...`);
+    console.log(`\n🌟 CODEXIA PRODUCTION ENGINE: Transforming ${files.length} files...`);
     
     let projectManifest = {
-        mappings: {},      
-        definitions: [],  
-        fileExports: {}    
+        mappings: {}, // Kotlin Class Name -> Swift Class Name
+        definitions: [], // List of defined Swift types
+        fileExports: {} // Swift File Paths
     };
 
     const results = [];
@@ -39,7 +40,6 @@ async function orchestrateProjectTransform(files, baseInstructions) {
         let transformedContent = "";
         let currentInstructions = baseInstructions;
 
-        // Detect libraries used in the current file
         const activeLibraries = Object.keys(LIBRARY_MAP).filter(lib => file.content.includes(lib));
 
         while (!verified && attempts < 3) {
@@ -48,45 +48,55 @@ async function orchestrateProjectTransform(files, baseInstructions) {
             const manifestStr = JSON.stringify(projectManifest.mappings);
             const shadowContext = injectShadowContext(file.content);
             
-            // 🔥 GOD-TIER ENHANCED PROMPT
+            // 🔥 ENHANCED AI PROMPT WITH RECENCY BIAS HARDENING
             const enhancedInstructions = `
-                You are the Codexia Engine: An Android-to-iOS Architectural God.
-                [COMMANDMENTS]:
-                1. NEVER OUTPUT KOTLIN. Phrases like 'val', 'fun', 'package', or 'var :Type' are forbidden.
-                2. NATIVE REPLACEMENTS: ${activeLibraries.map(l => `${l} -> ${LIBRARY_MAP[l]}`).join(', ')}
-                3. ARCHITECTURAL MAPPING: Map Room -> SwiftData, Retrofit -> URLSession, and Compose -> SwiftUI.
-                4. CONSISTENCY: Use these existing Swift names: ${manifestStr}
-                5. TYPES: Do not redefine ${projectManifest.definitions.join(', ')}.
-                6. SHADOW COMPLIANCE: Use @Model, @Query, @Observable, and @State as per the Shadow Toolchain.
-                7. NO EXPLANATIONS: Output ONLY pure Swift code.
+                You are the Codexia Engine: A world-class Android-to-iOS Architect.
                 
+                [CONTEXT & ASSETS]
+                - EXISTING MAPPINGS: ${manifestStr}
+                - ALREADY DEFINED TYPES: ${projectManifest.definitions.join(', ')}
+                - SHADOW SNIPPETS: ${shadowContext}
+
+                [ARCHITECTURAL STRATEGY]
+                - Map Room -> SwiftData
+                - Map Retrofit -> URLSession (Actor or Service)
+                - Map Compose/Activity -> SwiftUI View
+                - Library Specifics: ${activeLibraries.map(l => `${l} -> ${LIBRARY_MAP[l]}`).join(', ')}
+
                 ${currentInstructions}
-                ${shadowContext}
+
+                ### FINAL OUTPUT RULES (STRICT COMPLIANCE)
+                1. OUTPUT PURE SWIFT CODE ONLY.
+                2. NO Markdown formatting (DO NOT use \`\`\` symbols).
+                3. NO Intro or Outro text ("Here is the code", "Explanation:", etc).
+                4. NO Kotlin keywords: 'val', 'fun', 'package', or 'var name: Type'.
+                5. START IMMEDIATELY with 'import Foundation', 'import SwiftUI', or '@Model'.
+                6. IF YOU INCLUDE CONVERSATIONAL FILLER, THE COMPILER WILL CRASH. DO NOT TALK.
             `;
 
-            // Execute the transformation
+            // 1. Execute AI Transformation
             const resultObject = await transformCode(file.content, enhancedInstructions);
-            
-            if (resultObject && resultObject.transformedCode) {
-                transformedContent = resultObject.transformedCode;
-            } else {
-                transformedContent = "";
+            let rawOutput = (resultObject && resultObject.transformedCode) ? resultObject.transformedCode : "";
+
+            // 2. 🛡️ NUCLEAR SANITIZER v2.0
+            transformedContent = sanitizeOutput(rawOutput);
+
+            if (!transformedContent) {
+                console.log(`⚠️ WARNING: Sanitizer returned empty content for ${file.path}`);
+                continue;
             }
 
-            // Clean markdown artifacts
-            transformedContent = transformedContent.replace(/```swift|```|```kotlin/gi, '').trim();
-
-            // 🛡️ VALIDATION GATE
+            // 3. 🛡️ VALIDATION GATE
             const validation = await verifySwiftCode(transformedContent);
             
             if (validation.success) {
-                console.log(`✅ VERIFIED: ${file.path}`);
+                console.log(`✅ VERIFIED [${attempts}/3]: ${file.path}`);
                 verified = true;
                 updateManifest(file.path, file.content, transformedContent, projectManifest);
             } else {
-                console.log(`❌ FIXING: ${file.path} (Attempt ${attempts}/3)`);
-                // Feed the compiler error back into the AI for the next attempt
-                currentInstructions += `\n[Fix Compiler Error]: ${validation.error}\n[Correction]: ${validation.suggestion || "Ensure Swift 6 syntax."}`;
+                console.log(`❌ REFINING: ${file.path} (Attempt ${attempts}/3)`);
+                // Feed error back for self-correction
+                currentInstructions += `\n\n[Previous Attempt Error]: ${validation.error}\n[Required Fix]: Adhere to Swift 6 strict syntax. Ensure no English prose remains.`;
             }
         }
 
@@ -97,20 +107,22 @@ async function orchestrateProjectTransform(files, baseInstructions) {
         });
     }
 
-    // 🔄 GLOBAL SYNTHESIS PASS (Rename across all files)
+    // 🔄 GLOBAL SYNTHESIS PASS
     const finalizedProject = results.map(res => {
         let content = res.transformedContent;
+        
         for (const [ktName, swiftName] of Object.entries(projectManifest.mappings)) {
             const regex = new RegExp(`\\b${ktName}\\b`, 'g');
             content = content.replace(regex, swiftName);
         }
         
-        // Final "God-Tier" Cleanup for common missed types
         content = content
             .replace(/\bBoolean\b/g, 'Bool')
             .replace(/\bInt\b\?/g, 'Int?')
             .replace(/\bLong\b/g, 'Int64')
-            .replace(/:\s*Unit/g, ' -> Void');
+            .replace(/\bFloat\b/g, 'CGFloat')
+            .replace(/:\s*Unit/g, ' -> Void')
+            .replace(/\.toString\(\)/g, '.description');
 
         return { ...res, transformedContent: content };
     });
@@ -123,7 +135,61 @@ async function orchestrateProjectTransform(files, baseInstructions) {
 }
 
 /**
- * HELPER: SHADOW INJECTION (Architectural Patterns)
+ * 🛡️ NUCLEAR SANITIZER v2.0
+ * Strictly isolates Swift code from LLM chatter and Kotlin remnants.
+ */
+function sanitizeOutput(text) {
+    if (!text) return "";
+
+    // 1. Remove ALL markdown blocks immediately
+    let clean = text.replace(/```[\s\S]*?```/g, (match) => {
+        return match.replace(/```(swift|kotlin|json|text)?/gi, '').replace(/```/g, '');
+    });
+
+    // 2. Locate the "Code Horizon" 
+    const swiftKeywords = [
+        /\bimport\s+SwiftData\b/,
+        /\bimport\s+SwiftUI\b/,
+        /\bimport\s+Foundation\b/,
+        /\bimport\s+Combine\b/,
+        /\b@Model\b/,
+        /\bstruct\b/,
+        /\bclass\b/,
+        /\bprotocol\b/,
+        /\bfinal\s+class\b/
+    ];
+
+    let firstMatchIndex = -1;
+    for (const regex of swiftKeywords) {
+        const match = clean.search(regex);
+        if (match !== -1 && (firstMatchIndex === -1 || match < firstMatchIndex)) {
+            firstMatchIndex = match;
+        }
+    }
+
+    if (firstMatchIndex !== -1) {
+        clean = clean.substring(firstMatchIndex);
+    }
+
+    // 3. Final Cleanup: Remove trailing conversational garbage
+    const lastBrace = clean.lastIndexOf('}');
+    if (lastBrace !== -1) {
+        const tail = clean.substring(lastBrace + 1).trim();
+        if (tail.length > 15 && !tail.includes('import') && !tail.includes('func')) {
+            clean = clean.substring(0, lastBrace + 1);
+        }
+    }
+
+    // 4. Hard-strip Kotlin leftovers
+    clean = clean.replace(/^package\s+.*;/gm, '');
+    clean = clean.replace(/data class/g, 'struct'); 
+
+    if (clean.includes('@Model') && !clean.includes('import SwiftData')) { clean = 'import SwiftData\n' + clean; }
+    return clean.trim();
+}
+
+/**
+ * HELPER: SHADOW INJECTION
  */
 function injectShadowContext(kotlinCode) {
     const mappingsPath = path.join(__dirname, '..', 'shadow_library', 'Mappings.json');
@@ -135,12 +201,13 @@ function injectShadowContext(kotlinCode) {
         let found = false;
 
         for (const [lib, config] of Object.entries(mappings.libraries)) {
-            const pattern = new RegExp(config.replace_pattern, 'i');
+            const pattern = new RegExp(config.replace_pattern || lib, 'i');
             if (kotlinCode.includes(lib) || pattern.test(kotlinCode)) {
                 const shadowFilePath = path.join(__dirname, '..', 'shadow_library', config.category, config.inject);
+                
                 if (fs.existsSync(shadowFilePath)) {
                     const shadowCode = fs.readFileSync(shadowFilePath, 'utf8');
-                    shadowInstructions += `\nImplement logic using this pattern:\n${shadowCode}\n`;
+                    shadowInstructions += `\nPattern Implementation:\n${shadowCode}\n`;
                     found = true;
                 }
                 if (config.instructions) {
@@ -156,7 +223,7 @@ function injectShadowContext(kotlinCode) {
 }
 
 /**
- * HELPER: MANIFEST UPDATER (Tracks Class Name Mappings)
+ * HELPER: MANIFEST UPDATER
  */
 function updateManifest(filePath, original, transformed, manifest) {
     const ktMatch = original.match(/(?:class|interface|data class|object)\s+(\w+)/);
@@ -166,10 +233,13 @@ function updateManifest(filePath, original, transformed, manifest) {
         const ktName = ktMatch[1];
         const swiftName = swiftMatch[1];
         manifest.mappings[ktName] = swiftName;
+        
         if (!manifest.definitions.includes(swiftName)) {
             manifest.definitions.push(swiftName);
         }
-        manifest.fileExports[swiftName] = filePath.replace('.kt', '.swift');
+        
+        const swiftPath = filePath.replace(/\.kt$|\.java$/, '.swift');
+        manifest.fileExports[swiftName] = swiftPath;
     }
 }
 
