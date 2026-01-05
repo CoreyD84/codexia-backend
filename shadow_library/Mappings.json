@@ -1,0 +1,30 @@
+{
+  "libraries": {
+    "Retrofit": {
+      "inject": "NativeNetworkService.swift",
+      "replace_pattern": "class .*ApiService.*|@GET|@POST|retrofit2",
+      "category": "Data/Networking"
+    },
+    "Room": {
+      "inject": "BaseModel.swift",
+      "replace_pattern": "@Entity|@Dao|@Database|androidx.room",
+      "category": "Data/Persistence",
+      "instructions": "Collapse @Entity and @Dao into a single SwiftData @Model. Use @Attribute(.unique) for primary keys. Replace SQL Queries with Swift Predicates."
+    },
+    "RecyclerView": {
+      "inject": "ShadowRecyclerView.swift",
+      "replace_pattern": "v7\\.widget\\.RecyclerView|androidx\\.recyclerview|ListAdapter|ViewHolder",
+      "category": "UI/Navigation"
+    },
+    "Firebase": {
+      "inject": "FirebaseService.swift",
+      "replace_pattern": "FirebaseFirestore|FirebaseAuth|com.google.firebase",
+      "category": "Data/Cloud"
+    },
+    "Glide": {
+      "inject": "AsyncImage.swift",
+      "replace_pattern": "Glide\\.with|load\\(.*\\)\\.into",
+      "category": "UI/Media"
+    }
+  }
+}
