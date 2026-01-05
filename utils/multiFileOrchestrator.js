@@ -1,5 +1,5 @@
 const { transformCode } = require('./codeTransformers');
-const { verifySwiftCode } = require('./validator');
+const { verifySwiftCode } = require('../validator/codexiaValidator');
 
 /**
  * 📚 LIBRARY PROXY LAYER
