@@ -5,10 +5,17 @@ const { isKotlinCode } = require('./fileHandlers');
 const logger = require('./logger');
 const { getDefaultTransformOptions } = require('../types/TransformOptions');
 
+/**
+ * 📝 Transformation Metadata
+ */
 function getTransformationNote() {
   return 'Transformed using Codexia Local Model';
 }
 
+/**
+ * ⚡ CORE TRANSFORMER
+ * Handles the logic for sending a single file's context to the LLM.
+ */
 async function handleSingleFile(code, instructions, options) {
   try {
     const mergedOptions = {
@@ -31,6 +38,7 @@ async function handleSingleFile(code, instructions, options) {
     const userPrompt = buildUserPrompt(files, instructions, mergedOptions);
     const messages = buildMessages(systemPrompt, userPrompt);
 
+    // Call the local Ollama/Codexia engine
     const transformedCode = await runCodexiaTransform(messages, mergedOptions);
 
     return {
@@ -47,6 +55,11 @@ async function handleSingleFile(code, instructions, options) {
   }
 }
 
+/**
+ * 📤 EXPORTS
+ * Mapping 'handleSingleFile' to 'transformCode' to support the Orchestrator's naming convention.
+ */
 module.exports = {
-  handleSingleFile
+  handleSingleFile,
+  transformCode: handleSingleFile 
 };
