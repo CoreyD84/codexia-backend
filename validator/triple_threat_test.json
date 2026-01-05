@@ -1,0 +1,14 @@
+[
+  {
+    "path": "UserEntity.kt",
+    "content": "package com.codexia.data\nimport androidx.room.Entity\nimport androidx.room.PrimaryKey\n\n@Entity(tableName = \"users\")\ndata class UserEntity(\n    @PrimaryKey val id: Int,\n    val name: String,\n    val avatarUrl: String\n)"
+  },
+  {
+    "path": "UserApi.kt",
+    "content": "package com.codexia.network\nimport retrofit2.http.GET\n\ninterface UserApi {\n    @GET(\"users\")\n    suspend fun getUsers(): List<UserEntity>\n}"
+  },
+  {
+    "path": "UserListActivity.kt",
+    "content": "package com.codexia.ui\nimport androidx.recyclerview.widget.RecyclerView\nimport com.bumptech.glide.Glide\n\nclass UserListActivity : AppCompatActivity() {\n    private fun setupList(users: List<UserEntity>) {\n        val recyclerView = findViewById<RecyclerView>(R.id.userList)\n        // Glide load logic inside adapter would go here\n    }\n}"
+  }
+]
