@@ -49,6 +49,11 @@ async function runCodexiaTransform(messages, options = {}) {
   }
 
   try {
+    console.log('--- Sending request to Local LLM ---');
+    console.log('Base URL:', baseUrl);
+    console.log('Model:', model);
+    console.log('Messages:', JSON.stringify(messages, null, 2));
+
     const response = await axios.post(`${baseUrl}/v1/chat/completions`, {
       model,
       messages,
@@ -56,7 +61,15 @@ async function runCodexiaTransform(messages, options = {}) {
       temperature
     }, { timeout: 300000 });
 
-    return response?.data?.choices?.[0]?.message?.content || '';
+    console.log('--- Received response from Local LLM ---');
+    console.log('Response data:', JSON.stringify(response.data, null, 2));
+
+    if (response && response.data && response.data.choices && response.data.choices.length > 0 && response.data.choices[0].message) {
+      return response.data.choices[0].message.content;
+    } else {
+      logger.error('Unexpected response format from local LLM:', response.data);
+      return '// ERROR: Unexpected response format from local LLM';
+    }
   } catch (error) {
     logger.error(`LOCAL LLM ERROR: ${error.message}`);
     return await runInternalEngine(messages);

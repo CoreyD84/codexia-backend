@@ -3,9 +3,13 @@
   "version": "1.0.0",
   "description": "AI-powered backend for Codexia code transformation service",
   "main": "server.js",
+  "type": "commonjs",
   "scripts": {
     "start": "node server.js",
-    "dev": "node server.js"
+    "dev": "node server.js",
+    "titan": "node utils/titanOrchestrator.js",
+    "titan:full-sync": "node utils/titanOrchestrator.js --input ./android_input --output ./ios_project --verify --self-heal",
+    "titan:deploy": "node utils/deploy_to_ios.js"
   },
   "keywords": [
     "codexia",
@@ -24,5 +28,13 @@
     "multer": "^2.0.2",
     "openai": "^4.73.0",
     "winston": "^3.11.0"
-  }
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/CoreyD84/codexia-backend.git"
+  },
+  "bugs": {
+    "url": "https://github.com/CoreyD84/codexia-backend/issues"
+  },
+  "homepage": "https://github.com/CoreyD84/codexia-backend#readme"
 }

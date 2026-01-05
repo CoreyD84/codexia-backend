@@ -2,6 +2,8 @@ const { spawnSync } = require('child_process');
 const fs = require('fs');
 const path = require('path');
 
+const { titanShadowDefinitions } = require('../shadow_library/titanShadowDefinitions');
+
 /**
  * 🛡️ CODEXIA GATEKEEPER (Shadow Edition)
  * Uses "Shadow Definitions" to validate Apple-specific code on Windows.
@@ -12,38 +14,30 @@ function validateSwiftCode(code) {
     }
 
     // 1. Create a temporary Shadow File to mock Apple Frameworks
-    // This allows 'swiftc' to recognize @Model, Attribute, etc.
-    const shadowDefinitions = `
-        import Foundation
-        // Mock SwiftData
-        @attached(member, names: arbitrary) public macro Model() = #externalMacro(module: "None", type: "None")
-        public struct Attribute { 
-            public static func unique() -> Attribute { Attribute() } 
-        }
-        // Mock SwiftUI basics
-        public protocol View { var body: Any { get } }
-        public struct Text: View { public var body: Any; public init(_ text: String) { self.body = text } }
-    `;
+    const shadowDefinitions = titanShadowDefinitions;
+
 
     const tempShadowPath = path.join(__dirname, 'temp_shadow.swift');
     fs.writeFileSync(tempShadowPath, shadowDefinitions);
 
-    // 2. Run the compiler with the shadow file included
-    // We use '-parse' to check syntax without full linking
-    const result = spawnSync('swiftc', ['-parse', '-', tempShadowPath], { 
-        input: code, 
-        shell: true,
+    // 🚀 NEW: Create a temporary file for the code being validated
+    const tempCodePath = path.join(__dirname, 'temp_code_to_validate.swift');
+    fs.writeFileSync(tempCodePath, code);
+
+    // 2. Run the compiler with the code file and shadow file included
+    // Updated to use physical files instead of stdin '-' for Windows stability
+    const result = spawnSync('swiftc', ['-parse', tempCodePath, tempShadowPath], { 
         encoding: 'utf-8' 
     });
 
-    // Cleanup shadow file
+    // Cleanup temporary files
     if (fs.existsSync(tempShadowPath)) fs.unlinkSync(tempShadowPath);
+    if (fs.existsSync(tempCodePath)) fs.unlinkSync(tempCodePath);
 
     if (result.status !== 0) {
         const errorMessage = result.stderr ? result.stderr.toString() : "Unknown Compiler Error";
         
         // 🍏 TRAP REMAINING APPLE MODULE ERRORS
-        // If the compiler still complains about 'import', we bypass it
         const isModuleError = errorMessage.includes("no such module");
 
         if (isModuleError) {

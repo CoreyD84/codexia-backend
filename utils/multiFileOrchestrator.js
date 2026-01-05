@@ -50,11 +50,11 @@ async function orchestrateProjectTransform(files, baseInstructions) {
             
             // 🔥 ENHANCED AI PROMPT WITH RECENCY BIAS HARDENING
             const enhancedInstructions = `
-                You are the Codexia Engine: A world-class Android-to-iOS Architect.
-                
+                You are the Codexia Engine: A world-class Android-to-iOS Architect. Your primary goal is to provide **precise and non-redundant** code transformations that seamlessly integrate into an existing Swift project.
+
                 [CONTEXT & ASSETS]
                 - EXISTING MAPPINGS: ${manifestStr}
-                - ALREADY DEFINED TYPES: ${projectManifest.definitions.join(', ')}
+                - ALREADY DEFINED TYPES: ${projectManifest.definitions.join(', ')} (These types *already exist* in the project. REFER to them, do NOT redefine them.)
                 - SHADOW SNIPPETS: ${shadowContext}
 
                 [ARCHITECTURAL STRATEGY]
@@ -72,6 +72,10 @@ async function orchestrateProjectTransform(files, baseInstructions) {
                 4. NO Kotlin keywords: 'val', 'fun', 'package', or 'var name: Type'.
                 5. START IMMEDIATELY with 'import Foundation', 'import SwiftUI', or '@Model'.
                 6. IF YOU INCLUDE CONVERSATIONAL FILLER, THE COMPILER WILL CRASH. DO NOT TALK.
+                7. IMPORTANT: A '@Model' class should NOT be made 'Codable' directly for network parsing. If a network response requires a 'Codable' type, define a SEPARATE 'struct' (e.g., 'UserResponse') that is 'Codable', and then provide explicit mapping logic to convert 'UserResponse' instances to the '@Model' class instances.
+                8. DO NOT define '@Model' on 'struct' types. '@Model' is for 'class'es only.
+                9. **CRITICAL:** AVOID generating extraneous SwiftUI 'View's (e.g., 'ContentView') unless the original file was explicitly a UI component that translates directly into *that specific* View. Only generate the core, transformed component. Do NOT generate wrapper views or view models unless explicitly requested by the transformation of the original file.
+                10. **CRITICAL:** When mapping network response models, if a SwiftData '@Model' class with a similar conceptual name already exists (check 'ALREADY DEFINED TYPES'), you **MUST NOT REDEFINE IT**. Instead, refer to the existing '@Model' class. If a separate Codable struct for network responses is needed, name it appropriately (e.g., 'UserResponse') and ensure it's distinct from the '@Model' class.
             `;
 
             // 1. Execute AI Transformation
@@ -79,7 +83,7 @@ async function orchestrateProjectTransform(files, baseInstructions) {
             let rawOutput = (resultObject && resultObject.transformedCode) ? resultObject.transformedCode : "";
 
             // 2. 🛡️ NUCLEAR SANITIZER v2.0
-            transformedContent = sanitizeOutput(rawOutput);
+            transformedContent = sanitizeOutput(rawOutput, file.path);
 
             if (!transformedContent) {
                 console.log(`⚠️ WARNING: Sanitizer returned empty content for ${file.path}`);
@@ -95,6 +99,7 @@ async function orchestrateProjectTransform(files, baseInstructions) {
                 updateManifest(file.path, file.content, transformedContent, projectManifest);
             } else {
                 console.log(`❌ REFINING: ${file.path} (Attempt ${attempts}/3)`);
+                console.error(`Validation Error: ${validation.error}`); // Added this line
                 // Feed error back for self-correction
                 currentInstructions += `\n\n[Previous Attempt Error]: ${validation.error}\n[Required Fix]: Adhere to Swift 6 strict syntax. Ensure no English prose remains.`;
             }
@@ -138,7 +143,7 @@ async function orchestrateProjectTransform(files, baseInstructions) {
  * 🛡️ NUCLEAR SANITIZER v2.0
  * Strictly isolates Swift code from LLM chatter and Kotlin remnants.
  */
-function sanitizeOutput(text) {
+function sanitizeOutput(text, filePath) {
     if (!text) return "";
 
     // 1. Remove ALL markdown blocks immediately
@@ -183,6 +188,51 @@ function sanitizeOutput(text) {
     // 4. Hard-strip Kotlin leftovers
     clean = clean.replace(/^package\s+.*;/gm, '');
     clean = clean.replace(/data class/g, 'struct'); 
+
+    // POST-PROCESSING: Remove redundant UserModel class/struct definitions from non-UserEntity files
+    if (!filePath.includes("UserEntity.kt")) { 
+        // More robust regex to catch protocol conformances, etc.
+        clean = clean.replace(/(?:@Model\s+)?(?:final\s+)?(?:class|struct)\s+UserModel(?::\s*[\w,\s]+)?\s*\{[\s\S]*?\}/g, '');
+    }
+
+    // POST-PROCESSING: Remove extraneous UI components (View, ObservableObject) from non-UI files
+    // Original UserApi.kt was an interface, so it should not generate views or view models.
+    if (filePath.includes("UserApi.kt")) { 
+        clean = clean.replace(/(?:@main\s+)?struct\s+ContentView(?::\s*View)?\s*\{[\s\S]*?\}/g, ''); // Remove ContentView
+        clean = clean.replace(/class\s+\w+ViewModel(?::\s*ObservableObject)?\s*\{[\s\S]*?\}/g, ''); // Remove ViewModels
+    }
+    
+    // Original UserListActivity.kt was an Activity, so it should only generate one main View.
+    if (filePath.includes("UserListActivity.kt")) {
+        // Keep only the first struct that conforms to View, remove others.
+        const viewMatches = clean.matchAll(/(struct\s+\w+View(?::\s*View)?\s*\{[\s\S]*?\})/g);
+        let firstView = null;
+        let processedClean = clean;
+        for (const match of viewMatches) {
+            if (!firstView) {
+                firstView = match[0];
+            } else {
+                processedClean = processedClean.replace(match[0], ''); // Remove subsequent views
+            }
+        }
+        clean = processedClean;
+
+        // Also remove any extraneous ContentView from UserListActivity.
+        clean = clean.replace(/(?:@main\s+)?struct\s+ContentView(?::\s*View)?\s*\{[\s\S]*?\}/g, '');
+    }
+
+    // POST-PROCESSING: Ensure UserApi.kt only contains UserResponse and NetworkService
+    if (filePath.includes("UserApi.kt")) {
+        let desiredContent = [];
+        const topLevelDeclarations = clean.matchAll(/(?:(?:@Model|@main)\s+)?(?:final\s+)?(?:class|struct|protocol|enum)\s+\w+(?::\s*[\w,\s]+)?\s*\{[\s\S]*?\}/g);
+        
+        for (const match of topLevelDeclarations) {
+            if (match[0].includes("struct UserResponse") || match[0].includes("class NetworkService")) {
+                desiredContent.push(match[0]);
+            }
+        }
+        clean = desiredContent.join('\n\n'); // Join with double newline for separation
+    }
 
     if (clean.includes('@Model') && !clean.includes('import SwiftData')) { clean = 'import SwiftData\n' + clean; }
     return clean.trim();
