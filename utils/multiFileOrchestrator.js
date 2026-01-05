@@ -1,62 +1,82 @@
+const fs = require('fs');
+const path = require('path');
 const { transformCode } = require('./codeTransformers');
 const { verifySwiftCode } = require('../validator/codexiaValidator');
 
 /**
- * 📚 LIBRARY PROXY LAYER
- * Maps Android libraries to native iOS equivalents before AI processing.
+ * 📚 GOD-TIER LIBRARY PROXY LAYER
+ * Maps Android infrastructure to the high-performance iOS equivalents.
  */
 const LIBRARY_MAP = {
-    "Retrofit": "URLSession + Swift Concurrency",
+    "Retrofit": "URLSession + Swift Concurrency (async/await)",
     "Room": "SwiftData (@Model)",
     "Jetpack Compose": "SwiftUI",
-    "Hilt/Dagger": "Swift Dependency Injection (Protocols)",
-    "Glide/Coil": "AsyncImage",
-    "Gson/Moshi": "Codable",
-    "Firebase": "Firebase iOS SDK (Swift Package Manager)"
+    "Hilt/Dagger": "Swift Dependency Injection (Protocols/Environment)",
+    "Glide/Coil": "AsyncImage (Native SwiftUI)",
+    "Gson/Moshi": "Codable Protocols",
+    "Firebase": "Firebase iOS SDK",
+    "LiveData": "@Published + Combine",
+    "StateFlow": "@Observable (Swift Observation Framework)"
 };
 
 /**
- * CODEXIA PROJECT ORCHESTRATOR v6.0 
- * Goal: 100% Automated "Intent-to-Code" Transformation
+ * 🚀 CODEXIA PROJECT ORCHESTRATOR v8.0 (God-Tier Edition)
  */
-async function orchestrateProjectTransform(files, instructions) {
-    console.log(`\n🚀 CODEXIA PRODUCTION ENGINE: Transforming ${files.length} files...`);
+async function orchestrateProjectTransform(files, baseInstructions) {
+    console.log(`\n🌟 CODEXIA PRODUCTION ENGINE: Transforming ${files.length} files with AI God-Tier logic...`);
     
     let projectManifest = {
-        mappings: {},      // Kotlin Class -> Swift Class
-        definitions: [],   // Registry of all created Swift types
-        fileExports: {}    // Final file structure map
+        mappings: {},      
+        definitions: [],  
+        fileExports: {}    
     };
 
     const results = [];
-    const CONTEXT_LIMIT = 4096;
 
     for (const file of files) {
         let verified = false;
         let attempts = 0;
         let transformedContent = "";
+        let currentInstructions = baseInstructions;
 
-        // Detect libraries to provide specialized mapping instructions
+        // Detect libraries used in the current file
         const activeLibraries = Object.keys(LIBRARY_MAP).filter(lib => file.content.includes(lib));
 
         while (!verified && attempts < 3) {
             attempts++;
             
             const manifestStr = JSON.stringify(projectManifest.mappings);
+            const shadowContext = injectShadowContext(file.content);
             
-            // CONTEXT INJECTION: Forces AI to use native replacements and consistent naming
+            // 🔥 GOD-TIER ENHANCED PROMPT
             const enhancedInstructions = `
-                ${instructions}
-                [NATIVE REPLACEMENTS]: ${activeLibraries.map(l => `${l} -> ${LIBRARY_MAP[l]}`).join(', ')}
-                [CONSISTENCY]: Use these Swift names: ${manifestStr}
-                [TYPES]: Do not redefine ${projectManifest.definitions.join(', ')}.
-                [FORMAT]: Output ONLY pure Swift code.
+                You are the Codexia Engine: An Android-to-iOS Architectural God.
+                [COMMANDMENTS]:
+                1. NEVER OUTPUT KOTLIN. Phrases like 'val', 'fun', 'package', or 'var :Type' are forbidden.
+                2. NATIVE REPLACEMENTS: ${activeLibraries.map(l => `${l} -> ${LIBRARY_MAP[l]}`).join(', ')}
+                3. ARCHITECTURAL MAPPING: Map Room -> SwiftData, Retrofit -> URLSession, and Compose -> SwiftUI.
+                4. CONSISTENCY: Use these existing Swift names: ${manifestStr}
+                5. TYPES: Do not redefine ${projectManifest.definitions.join(', ')}.
+                6. SHADOW COMPLIANCE: Use @Model, @Query, @Observable, and @State as per the Shadow Toolchain.
+                7. NO EXPLANATIONS: Output ONLY pure Swift code.
+                
+                ${currentInstructions}
+                ${shadowContext}
             `;
 
-            transformedContent = await transformCode(file.content, enhancedInstructions);
-            transformedContent = transformedContent.replace(/```swift|```/gi, '').trim();
+            // Execute the transformation
+            const resultObject = await transformCode(file.content, enhancedInstructions);
+            
+            if (resultObject && resultObject.transformedCode) {
+                transformedContent = resultObject.transformedCode;
+            } else {
+                transformedContent = "";
+            }
 
-            // COMPILER GATEKEEPER
+            // Clean markdown artifacts
+            transformedContent = transformedContent.replace(/```swift|```|```kotlin/gi, '').trim();
+
+            // 🛡️ VALIDATION GATE
             const validation = await verifySwiftCode(transformedContent);
             
             if (validation.success) {
@@ -64,8 +84,9 @@ async function orchestrateProjectTransform(files, instructions) {
                 verified = true;
                 updateManifest(file.path, file.content, transformedContent, projectManifest);
             } else {
-                console.log(`❌ FIXING: ${file.path} (Attempt ${attempts})`);
-                instructions += `\n[Fix Compiler Error]: ${validation.error}`;
+                console.log(`❌ FIXING: ${file.path} (Attempt ${attempts}/3)`);
+                // Feed the compiler error back into the AI for the next attempt
+                currentInstructions += `\n[Fix Compiler Error]: ${validation.error}\n[Correction]: ${validation.suggestion || "Ensure Swift 6 syntax."}`;
             }
         }
 
@@ -76,26 +97,67 @@ async function orchestrateProjectTransform(files, instructions) {
         });
     }
 
-    // 🔄 GLOBAL SYNTHESIS PASS (Resolves the final 30% of manual work)
-    // This scans all results and swaps any leftover Kotlin-style names with the manifest's Swift names.
+    // 🔄 GLOBAL SYNTHESIS PASS (Rename across all files)
     const finalizedProject = results.map(res => {
         let content = res.transformedContent;
         for (const [ktName, swiftName] of Object.entries(projectManifest.mappings)) {
             const regex = new RegExp(`\\b${ktName}\\b`, 'g');
             content = content.replace(regex, swiftName);
         }
-        // Final sanity check: Ensure no Kotlin types remain
-        content = content.replace(/\bBoolean\b/g, 'Bool').replace(/\bInt\b\?/g, 'Int?');
+        
+        // Final "God-Tier" Cleanup for common missed types
+        content = content
+            .replace(/\bBoolean\b/g, 'Bool')
+            .replace(/\bInt\b\?/g, 'Int?')
+            .replace(/\bLong\b/g, 'Int64')
+            .replace(/:\s*Unit/g, ' -> Void');
+
         return { ...res, transformedContent: content };
     });
 
-    return { 
-        success: true, 
+    return {
+        success: true,
         projectSummary: projectManifest,
-        files: finalizedProject 
+        files: finalizedProject
     };
 }
 
+/**
+ * HELPER: SHADOW INJECTION (Architectural Patterns)
+ */
+function injectShadowContext(kotlinCode) {
+    const mappingsPath = path.join(__dirname, '..', 'shadow_library', 'Mappings.json');
+    if (!fs.existsSync(mappingsPath)) return "";
+
+    try {
+        const mappings = JSON.parse(fs.readFileSync(mappingsPath, 'utf8'));
+        let shadowInstructions = "\n[SHADOW CONTEXT DETECTED]:\n";
+        let found = false;
+
+        for (const [lib, config] of Object.entries(mappings.libraries)) {
+            const pattern = new RegExp(config.replace_pattern, 'i');
+            if (kotlinCode.includes(lib) || pattern.test(kotlinCode)) {
+                const shadowFilePath = path.join(__dirname, '..', 'shadow_library', config.category, config.inject);
+                if (fs.existsSync(shadowFilePath)) {
+                    const shadowCode = fs.readFileSync(shadowFilePath, 'utf8');
+                    shadowInstructions += `\nImplement logic using this pattern:\n${shadowCode}\n`;
+                    found = true;
+                }
+                if (config.instructions) {
+                    shadowInstructions += `[STRATEGY]: ${config.instructions}\n`;
+                    found = true;
+                }
+            }
+        }
+        return found ? shadowInstructions : "";
+    } catch (err) {
+        return "";
+    }
+}
+
+/**
+ * HELPER: MANIFEST UPDATER (Tracks Class Name Mappings)
+ */
 function updateManifest(filePath, original, transformed, manifest) {
     const ktMatch = original.match(/(?:class|interface|data class|object)\s+(\w+)/);
     const swiftMatch = transformed.match(/(?:class|struct|protocol|enum)\s+(\w+)/);
