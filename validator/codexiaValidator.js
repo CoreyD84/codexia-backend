@@ -70,7 +70,31 @@ function analyzeError(error) {
     return error;
 }
 
+function validateWithPillars(swiftCode, rules) {
+    const pillars = Object.keys(rules).filter(k => k.startsWith("PILLAR_"));
+
+    for (const pillar of pillars) {
+        for (const rule of rules[pillar].rules) {
+            if (pillar === "PILLAR_I_THE_PYRAMID_OF_FOUNDATION") {
+                if (rule.includes("UIKit") && swiftCode.includes("UIKit")) {
+                    return { success: false, error: `Pillar I Violation: ${rule}` };
+                }
+                if (rule.includes("UIViewController") && swiftCode.includes("UIViewController")) {
+                    return { success: false, error: `Pillar I Violation: ${rule}` };
+                }
+            }
+            if (pillar === "PILLAR_V_THE_HANGING_GARDENS_OF_UI") {
+                if (rule.includes("Color(0x") && swiftCode.includes("Color(0x")) {
+                    return { success: false, error: `Pillar V Violation: ${rule}` };
+                }
+            }
+        }
+    }
+    return { success: true };
+}
+
 module.exports = {
     validateSwiftCode,
-    verifySwiftCode: validateSwiftCode 
+    verifySwiftCode: validateSwiftCode,
+    validateWithPillars
 };

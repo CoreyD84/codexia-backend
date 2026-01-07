@@ -1,0 +1,67 @@
+{
+  "PROJECT_NAME": "CODEXIA_ORCHESTRATOR_ALPHA",
+  "ENGINE_SPEC": "INDUSTRIAL-2026",
+  
+  "PILLAR_I_THE_PYRAMID_OF_FOUNDATION": {
+    "desc": "Universal architectural stability (Modern SwiftUI 6.0+)",
+    "rules": [
+      "STRUCTURE: Every file must be a Struct. Class is forbidden unless for ObservableObjects.",
+      "LIFECYCLE: Kotlin 'onCreate' and 'onResume' must map ONLY to '.onAppear'.",
+      "LIFECYCLE: Kotlin 'onDestroy' must map ONLY to '.onDisappear'.",
+      "BANNED: Any trace of UIKit, UIViewController, or 'override func' is a fatal error."
+    ]
+  },
+
+  "PILLAR_II_THE_LIGHTHOUSE_OF_ARTECH": {
+    "desc": "Handling proprietary and 'Black Box' Sprint/T-Mobile SDKs",
+    "rules": [
+      "SDK_MAPPING: If 'com.sprint.internal' is detected, use the 'Ghost Proxy' Pattern.",
+      "RADIO_MANAGER: Map '.connectToTower' to an @StateObject managing a Combine Publisher.",
+      "SIGNAL_LOGIC: Replace legacy CDMA/LTE enums with type-safe Swift Enums."
+    ]
+  },
+
+  "PILLAR_III_THE_COLOSSUS_OF_COMMERCE": {
+    "desc": "Scale rules for Walmart-level logistics and retail apps",
+    "rules": [
+      "LISTS: Use 'LazyVStack' inside 'ScrollView'. Never use 'LazyRow' syntax.",
+      "IMAGES: Map 'Glide' or 'Coil' calls to 'AsyncImage' with placeholder support.",
+      "LOCALIZATION: Every string must be wrapped in 'NSLocalizedString' logic."
+    ]
+  },
+
+  "PILLAR_IV_THE_TEMPLE_OF_FINANCE": {
+    "desc": "Security rules for banking-grade encryption and privacy",
+    "rules": [
+      "ENCRYPTION: Map 'EncryptedSharedPreferences' directly to 'Swift Keychain'.",
+      "CURRENCY: Use 'Decimal' and 'NumberFormatter'. Never use Float for money.",
+      "BIOMETRICS: Replace 'BiometricPrompt' with 'LocalAuthentication' (FaceID/TouchID)."
+    ]
+  },
+
+  "PILLAR_V_THE_HANGING_GARDENS_OF_UI": {
+    "desc": "Visual consistency and design-system fidelity",
+    "rules": [
+      "COLORS: Output MUST be Color(hex: 'RRGGBB'). 0x syntax is strictly banned.",
+      "FONTS: Modifiers like .font() must be trailing, never parameters inside Text().",
+      "PADDING: Use standard SwiftUI padding constants to match 8dp grid spacing."
+    ]
+  },
+
+  "PILLAR_VI_THE_MAUSOLEUM_OF_LEGACY": {
+    "desc": "The 'Kill-Switch' for old habits",
+    "rules": [
+      "NO_MARKDOWN: Do not output ```swift or ```. Output raw code only.",
+      "NO_CHITCHAT: Do not explain the code. Do not apologize. Do not comment.",
+      "RECOVERY: If an Android method is unknown, stub it with '// TODO: Codexia-Manual-Fix'."
+    ]
+  },
+
+  "PILLAR_VII_THE_STATUE_OF_LOGIC": {
+    "desc": "Data flow and state management",
+    "rules": [
+      "STATE: Kotlin 'MutableStateFlow' maps to ' @Published' in a ViewModel.",
+      "FLOW: Kotlin '.collect' maps to '.onReceive' or 'Async/Await' loops."
+    ]
+  }
+}

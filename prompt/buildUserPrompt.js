@@ -22,6 +22,7 @@ function buildUserPrompt(files, instructions, options = {}, projectContext = nul
   const model = options.model || 'primary';
   const modelHint = options.modelHint || 'medium';
   const allowExplanations = options.allowExplanations === true;
+  const libraryHints = options.libraryHints || '';
 
   const primary = files[0];
 
@@ -57,6 +58,11 @@ ${projectContext.sharedPreferencesKeys.map(k => `• ${k}`).join('\n')}
 ${projectContext.intentExtras.map(e => `• ${e}`).join('\n')}
 `;
   }
+
+  let libraryContextBlock = `
+# EXTERNAL LIBRARY CONTEXT
+${libraryHints || "No custom SDKs detected. Use standard SwiftUI."}
+  `;
 
   // Build summaries of other files (if provided)
   let otherFilesBlock = '';
@@ -116,6 +122,8 @@ ${instructions}
 
 # EXPLANATION MODE
 ${allowExplanations ? 'Explanations are allowed.' : 'Do NOT include explanations.'}
+
+${libraryContextBlock}
 
 ${contextBlock}
 
