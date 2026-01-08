@@ -37,6 +37,7 @@ struct GlobexTracker {
         type: "Mock",
         mockImplementation: `
 import Foundation
+import Combine
 
 struct TowerSignal {
     let strength: String
@@ -44,8 +45,9 @@ struct TowerSignal {
     static let STRENGTH_LOW = "LOW"
 }
 
-class RadioManager {
+class RadioManager: ObservableObject {
     static let shared = RadioManager()
+    @Published var currentSignal: TowerSignal?
 
     private init() {}
 
@@ -58,6 +60,7 @@ class RadioManager {
         // Simulate a network delay
         DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
             let signal = TowerSignal(strength: Bool.random() ? TowerSignal.STRENGTH_HIGH : TowerSignal.STRENGTH_LOW)
+            self.currentSignal = signal // Update published property
             print("🛡️ [CODEXIA MOCK]: Connection established. Signal strength: \\(signal.strength)")
             completion(signal)
         }

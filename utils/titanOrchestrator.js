@@ -3,9 +3,10 @@ const path = require('path');
 const { transformCode } = require('./codeTransformers');
 const { validateSwiftCode } = require('../validator/codexiaValidator');
 const { convertToXcAsset } = require('./assetMapper');
+const { titanExtensions } = require('./titanExtensions');
 
-const ANDROID_SRC = './android_input';
-const IOS_OUTPUT = './ios_output';
+const ANDROID_SRC = process.argv.includes('--input') ? process.argv[process.argv.indexOf('--input') + 1] : './android_input';
+const IOS_OUTPUT = process.argv.includes('--output') ? process.argv[process.argv.indexOf('--output') + 1] : './ios_output';
 
 function getAllFiles(dirPath, arrayOfFiles) {
     const files = fs.readdirSync(dirPath);
@@ -41,6 +42,12 @@ async function runTitanTransformation() {
     const startTime = Date.now();
     let uiKitLeaksPatched = 0;
     
+    // 0. Inject Global Extensions (The Infrastructure)
+    console.log("🏗️ Phase 0: Injecting Global Infrastructure...");
+    const extPath = path.join(IOS_OUTPUT, 'Extensions', 'Foundation+Extensions.swift');
+    if (!fs.existsSync(path.dirname(extPath))) fs.mkdirSync(path.dirname(extPath), { recursive: true });
+    fs.writeFileSync(extPath, titanExtensions);
+
     // 1. Process Assets
     const assetFiles = getAllFiles(ANDROID_SRC).filter(f => /\.(png|jpg|xml|webp)$/i.test(f));
     if (assetFiles.length > 0) {
@@ -60,6 +67,9 @@ async function runTitanTransformation() {
 
     console.log("🛠️ Phase 2: Transforming Logic & UI...");
     
+    // Hardware Dependency Tracker
+    const hardwareDependencies = new Set();
+
     for (let i = 0; i < files.length; i++) {
         const file = files[i];
         const fileName = path.basename(file);
@@ -68,6 +78,12 @@ async function runTitanTransformation() {
         const kotlinCode = fs.readFileSync(file, 'utf8');
         if (fileName.includes("Activity")) detectedRoutes.push(fileName.replace('.kt', ''));
 
+        // DETECT HARDWARE DEPENDENCIES
+        if (kotlinCode.includes("@dependency:SprintRadioManager")) {
+            hardwareDependencies.add("SprintRadioManager");
+            console.log("  🔌 Detected Hardware Dependency: SprintRadioManager");
+        }
+
         let validation = { success: false, error: ""};
         let attempts = 0;
         let finalSwiftCode = "";
@@ -75,12 +91,27 @@ async function runTitanTransformation() {
         while(!validation.success && attempts < 3) {
             attempts++;
             
-            // SYSTEM PROMPT: THE "SWIFTUI-ONLY" MANDATE
+            // SYSTEM PROMPT: THE "SCHOLAR PASS" MANDATE
             let prompt = `
-            TRANSFORM TO MODERN SWIFTUI ONLY. 
-            - ❌ NEVER USE: UIViewController, UIKit, pushViewController.
+            TRANSFORM TO STRICT SWIFTUI.
+            
+            [INFRASTRUCTURE]
+            - ✅ ASSUME 'Color(hex: String)' exists globally. DO NOT implement it.
+            - ✅ ASSUME 'Route' enum exists globally (in Models/Navigation/Route.swift). DO NOT define 'enum Route' locally.
+            
+            [NAVIGATION & ARCHITECTURE]
+            - ❌ NEVER USE: UIViewController, UIKit, NavigationLink(destination:).
             - ✅ ALWAYS USE: struct ViewName: View, @Binding var path: NavigationPath.
-            - Navigation must use path.append(.RouteName).
+            - ✅ BACK LOGIC: If button text says "Back"/"Close" OR logic is 'finish()', usage of 'path.removeLast()' is MANDATORY. This OVERRIDES any 'path.append' derived from Intents.
+            - ✅ INTENTS: Map other Android Intents to 'path.append(Route.[destination])'.
+            - ✅ SINGLETONS: Use @ObservedObject for Kotlin Singletons/Objects (e.g., RadioManager.shared) instead of local @StateObject initialization.
+            - ✅ STATE: Map 'private val _state' or 'StateFlow' to public '@Published' properties.
+            - ✅ CONCURRENCY: Mark all Singletons/ObservableObjects with '@MainActor' to ensure UI updates happen on the main thread.
+            - ✅ MANAGER: If accessing a Singleton (like RadioManager.getInstance()), use '@ObservedObject var manager = Class.getInstance()'. DO NOT use @StateObject.
+            - ✅ PREVIEWS: For @Binding path, use a static wrapper in Previews. DO NOT pass a constant directly if it breaks compilation.
+            - ✅ BACK BUTTON: For custom back logic, use '.navigationBarBackButtonHidden(true)' and a '.toolbar' item with 'path.removeLast()'.
+            - ✅ ROOT VIEW: If a file is marked as '@file:Root' or represents the initial screen (e.g., HomeView), it MUST NOT have a back button or any 'path.removeLast()' logic.
+            - ✅ DESTINATION: Navigation destinations are handled in 'TitanRootView'. DO NOT use 'navigationDestination' inside this view.
             `;
 
             if (attempts > 1) {
@@ -90,7 +121,7 @@ async function runTitanTransformation() {
 
             try {
                 const result = await transformCode(kotlinCode, prompt);
-                const { sanitized, patched } = sanitizeOutput(result.transformedCode);
+                const { sanitized, patched } = sanitizeOutput(result.transformedCode, file);
                 finalSwiftCode = sanitized;
                 if (patched) uiKitLeaksPatched++;
 
@@ -108,6 +139,17 @@ async function runTitanTransformation() {
         drawProgressBar(i + 1, files.length, "Source Code");
     }
 
+    // FORCE HARDWARE VIEW GENERATION
+    if (hardwareDependencies.has("SprintRadioManager")) {
+        console.log("  ⚡ Forcing creation of SprintRadioView.swift...");
+        generateSprintRadioView();
+        // Add to routes if not present
+        if (!detectedRoutes.includes("SprintRadioActivity")) {
+             detectedRoutes.push("SprintRadioActivity");
+        }
+    }
+
+    generateGlobalRoute(detectedRoutes);
     generateTitanRoot(detectedRoutes);
     
     const duration = ((Date.now() - startTime) / 1000).toFixed(1);
@@ -120,21 +162,20 @@ async function runTitanTransformation() {
 }
 
 function generateTitanRoot(routes) {
-    const routeCases = routes.map(r => `case ${r}`).join('\n    ');
-    const routeDestinations = routes.map(r => `case .${r}: ${r.replace('Activity', 'View')}()`).join('\n                ');
+    const routeDestinations = routes.map(r => {
+        const routeName = r.replace('Activity', '').toLowerCase();
+        const viewName = r.replace('Activity', 'View');
+        return `case .${routeName}: ${viewName}(path: $path)`;
+    }).join('\n                        ');
 
     const skeleton = `
 import SwiftUI
-
-enum Route: Hashable {
-    ${routeCases}
-}
 
 struct TitanRootView: View {
     @State private var path = NavigationPath()
     var body: some View {
         NavigationStack(path: $path) {
-            ContentView()
+            HomeView(path: $path) // Default entry point
                 .navigationDestination(for: Route.self) { route in
                     switch route {
                         ${routeDestinations}
@@ -149,7 +190,64 @@ struct TitanRootView: View {
     fs.writeFileSync(targetPath, skeleton.trim());
 }
 
-function sanitizeOutput(text) {
+function generateGlobalRoute(routes) {
+    const routeCases = routes.map(r => {
+        const routeName = r.replace('Activity', '').toLowerCase();
+        return `case ${routeName}`;
+    }).join('\n    ');
+
+    const code = `
+import Foundation
+
+enum Route: String, CaseIterable, Hashable, Identifiable {
+    ${routeCases}
+    
+    var id: String { self.rawValue }
+}
+    `;
+    const targetPath = path.join(IOS_OUTPUT, 'Models', 'Navigation', 'Route.swift');
+    if (!fs.existsSync(path.dirname(targetPath))) fs.mkdirSync(path.dirname(targetPath), { recursive: true });
+    fs.writeFileSync(targetPath, code.trim());
+}
+
+function generateSprintRadioView() {
+    const code = `
+import SwiftUI
+
+struct SprintRadioView: View {
+    @Binding var path: NavigationPath
+    @ObservedObject private var radioManager = RadioManager.getInstance()
+
+    var body: some View {
+        VStack {
+            Text("Sprint Radio Tower Link")
+                .font(.title)
+                .padding()
+            
+            if let signal = radioManager.currentSignal {
+                Text("Signal: \\(signal.strength)")
+                    .foregroundColor(signal.strength == "HIGH" ? Color(hex: "00FF00") : Color(hex: "FF0000"))
+            } else {
+                ProgressView("Scanning...")
+            }
+            
+            Button("Force Handoff") {
+                radioManager.forceLegacyHandoff(protocolType: "GSM")
+            }
+            .padding()
+        }
+        .onAppear {
+            radioManager.connectToTower("TOWER_AUTO", completion: { _ in })
+        }
+    }
+}
+    `;
+    const targetPath = path.join(IOS_OUTPUT, 'Views', 'SprintRadioView.swift');
+    if (!fs.existsSync(path.dirname(targetPath))) fs.mkdirSync(path.dirname(targetPath), { recursive: true });
+    fs.writeFileSync(targetPath, code.trim());
+}
+
+function sanitizeOutput(text, filePath) {
     if (!text) return { sanitized: "", patched: false };
     let patched = false;
     let clean = text.replace(/```[\s\S]*?```/g, (m) => m.replace(/```(swift|kotlin|json|text)?/gi, '').replace(/```/g, ''));
@@ -171,7 +269,35 @@ function sanitizeOutput(text) {
     const lastBrace = clean.lastIndexOf('}');
     if (lastBrace !== -1) clean = clean.substring(0, lastBrace + 1);
 
+    // 4. Hard-strip Kotlin leftovers
+    clean = clean.replace(/^package\s+.*;/gm, '');
+    clean = clean.replace(/data class/g, 'struct'); 
+
+    // POST-PROCESSING: Remove redundant UserModel class/struct definitions from non-UserEntity files
+    if (!filePath.includes("UserEntity.kt")) { 
+        // More robust regex to catch protocol conformances, etc.
+        clean = clean.replace(/(?:@Model\s+)?(?:final\s+)?(?:class|struct)\s+UserModel(?::\s*[\w,\s]+)?\s*\{[\s\S]*?\}/g, '');
+    }
+
+    // 🛡️ FINAL SCHEMA GUARD: Forcefully remove any local Route enum declarations
+    clean = finalCleanup(clean);
+
+    // 🛡️ UI LEAK GUARD: Remove TitanRootView/ContentView from non-root files
+    if (!filePath.includes("TitanRootView")) {
+        clean = clean.replace(/struct TitanRootView[\s\S]*?\{[\s\S]*?\}/g, '');
+        clean = clean.replace(/struct ContentView[\s\S]*?\{[\s\S]*?\}/g, '');
+        clean = clean.replace(/@main[\s\S]*?struct.*?App[\s\S]*?\{[\s\S]*?\}/g, '');
+    }
+
     return { sanitized: clean.trim(), patched };
+}
+
+function finalCleanup(content) {
+    // 1. Forcefully remove any local Route enum declarations
+    const cleaned = content.replace(/enum Route[\s\S]*?\{[\s\S]*?\}/g, '');
+    
+    // 2. Ensure it didn't accidentally remove the global import reference
+    return cleaned.trim();
 }
 
 function saveToIosProject(originalPath, swiftCode) {

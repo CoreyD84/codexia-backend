@@ -8,7 +8,10 @@
       "STRUCTURE: Every file must be a Struct. Class is forbidden unless for ObservableObjects.",
       "LIFECYCLE: Kotlin 'onCreate' and 'onResume' must map ONLY to '.onAppear'.",
       "LIFECYCLE: Kotlin 'onDestroy' must map ONLY to '.onDisappear'.",
-      "BANNED: Any trace of UIKit, UIViewController, or 'override func' is a fatal error."
+      "BANNED: Any trace of UIKit, UIViewController, or 'override func' is a fatal error.",
+      "NAVIGATION: Default pattern is 'NavigationStack' with a 'Route' enum. Route cases must be lowerCamelCase (e.g. .profile).",
+      "ROOT_VIEW: The initial/root view (e.g. HomeView) must not implement back buttons or path.removeLast() as it is the base of the stack.",
+      "INTENT_MAPPING: If the source Kotlin logic or the button text implies a 'Back', 'Return', or 'Close' action, the Swift output MUST use path.removeLast() and never path.append(). Otherwise, map Intents to 'path.append(Route.[Destination])'."
     ]
   },
 
@@ -17,7 +20,8 @@
     "rules": [
       "SDK_MAPPING: If 'com.sprint.internal' is detected, use the 'Ghost Proxy' Pattern.",
       "RADIO_MANAGER: Map '.connectToTower' to an @StateObject managing a Combine Publisher.",
-      "SIGNAL_LOGIC: Replace legacy CDMA/LTE enums with type-safe Swift Enums."
+      "SIGNAL_LOGIC: Replace legacy CDMA/LTE enums with type-safe Swift Enums.",
+      "HARDWARE_DEPENDENCY: If '@dependency:SprintRadioManager' is found, FORCE creation of 'SprintRadioView.swift'."
     ]
   },
 
@@ -61,7 +65,20 @@
     "desc": "Data flow and state management",
     "rules": [
       "STATE: Kotlin 'MutableStateFlow' maps to ' @Published' in a ViewModel.",
-      "FLOW: Kotlin '.collect' maps to '.onReceive' or 'Async/Await' loops."
+      "FLOW: Kotlin '.collect' maps to '.onReceive' or 'Async/Await' loops.",
+      "STATE_VISIBILITY: Any Kotlin variable marked with 'private val _state' or 'StateFlow' must be transformed into a public '@Published' property in the Swift singleton.",
+      "CONCURRENCY: All generated Singletons inheriting from BaseSingleton must be marked with @MainActor or ensure that property updates are wrapped in DispatchQueue.main.async to prevent thread-safety crashes.",
+      "MANAGER_MAPPING: Identify Kotlin 'Manager' patterns (e.g. RadioManager). Map them to '@ObservedObject' in SwiftUI Views and link to the '.shared' instance instead of creating a local '@StateObject'."
     ]
+  },
+
+  "GLOBAL_SCHEMA_CONSOLIDATION": {
+    "rule_id": "GLOBAL_SCHEMA_CONSOLIDATION",
+    "description": "Prevents redeclaration of enums and models across multiple files.",
+    "constraints": {
+      "enums": "Move all 'Route' and 'AppConstants' enums to 'Shared/Navigation/Route.swift'.",
+      "collision_prevention": "Strictly forbid local enum declarations within View files if they relate to navigation.",
+      "back_button_logic": "Map all 'Back' or 'Close' UI actions to 'path.removeLast()' instead of 'path.append()'."
+    }
   }
 }
