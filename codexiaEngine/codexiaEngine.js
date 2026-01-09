@@ -9,11 +9,9 @@ function resolveModelFromOptions(options = {}) {
   const hint = options.modelHint || 'medium';
 
   if (modelKey === 'primary' || modelKey === 'qwen') {
-    if (hint === 'small') return 'qwen2.5-coder:1.5b';
-    if (hint === 'large') return 'qwen2.5-coder:7b';
-    return 'qwen2.5-coder:3b';
+    return 'deepseek-coder:6.7b';
   }
-  return process.env.LOCAL_LLM_MODEL || 'qwen2.5-coder:3b';
+  return process.env.LOCAL_LLM_MODEL || 'deepseek-coder:6.7b';
 }
 
 // ---------------------------------------------------------
