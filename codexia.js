@@ -1,38 +1,42 @@
 #!/usr/bin/env node
+/**
+ * CODEXIA GEMINI-STYLE SHELL
+ * - Default behavior: single prompt -> single response (NO repo-wide actions)
+ * - Explicit commands for file transforms and patch-apply
+ * - Optional context toggle (fast vs smart)
+ */
 
 const readline = require("readline");
 const fs = require("fs");
 const path = require("path");
 
-const {
-  runCodexiaTransform,
-  buildMessages
-} = require("./codexiaEngine/codexiaEngine.js");
-
-const { buildSystemPrompt } = require("./prompt/buildSystemPrompt.js");
+const { runCodexiaTransform, buildMessages } = require("./codexiaEngine/codexiaEngine.js");
+const { buildSystemPrompt, buildCodexiaSelfModificationPrompt } = require("./prompt/buildSystemPrompt.js");
 
 // ---------------------------------------------------------
-// PROJECT CONTEXT
+// ROOT + IGNORE
 // ---------------------------------------------------------
-const projectRoot = __dirname;
+const projectRoot = process.cwd();
+const IGNORE_DIRS = new Set(["node_modules", "build", "bin", ".git"]);
 
+// ---------------------------------------------------------
+// PROJECT CONTEXT (OPTIONAL)
+// ---------------------------------------------------------
 function buildProjectContext() {
   const files = [];
-
   function walk(dir) {
     const entries = fs.readdirSync(dir, { withFileTypes: true });
     for (const entry of entries) {
       const fullPath = path.join(dir, entry.name);
       const relPath = path.relative(projectRoot, fullPath);
       if (entry.isDirectory()) {
-        if (["node_modules", "build", "bin"].includes(entry.name)) continue;
+        if (IGNORE_DIRS.has(entry.name)) continue;
         walk(fullPath);
       } else {
         files.push({ path: relPath });
       }
     }
   }
-
   walk(projectRoot);
 
   return {
@@ -44,137 +48,18 @@ function buildProjectContext() {
   };
 }
 
-const projectContext = buildProjectContext();
-const systemPrompt = buildSystemPrompt({}, projectContext);
+let contextEnabled = false; // Gemini-style: OFF by default (faster, no full scan)
 
-// ---------------------------------------------------------
-// SHELL STATE
-// ---------------------------------------------------------
-let mode = "normal"; // "normal" | "multiline"
-let multilineBuffer = [];
-let lastMultilinePrompt = null;
-let lastMultiFileOutput = null;
-
-// ---------------------------------------------------------
-// HELP TEXT
-// ---------------------------------------------------------
-function printHelp() {
-  console.log(`
-Codexia Shell Commands:
-  :help           Show this help
-  :files          List project files (relative to codexia-backend)
-  :read <path>    Print a file's contents
-  :ml             Enter multiline mode (paste, then type :end)
-  :end            Exit multiline mode and send buffer to Codexia
-  :xform <path>   Transform a single file via Codexia engine (prints only)
-  :xform-all      Transform all SwiftUI-relevant files and write back
-  :contract       Apply last multiline contract to Codexia prompt/rule files
-  :apply          Re-apply last multi-file Codexia output to disk
-  :quit           Exit Codexia Shell
-`);
+// Build prompts on demand so toggling context works immediately
+function getSystemPrompt({ selfModify = false } = {}) {
+  if (selfModify) return buildCodexiaSelfModificationPrompt();
+  if (!contextEnabled) return buildSystemPrompt({}, null);
+  const projectContext = buildProjectContext();
+  return buildSystemPrompt({}, projectContext);
 }
 
 // ---------------------------------------------------------
-// FILE HELPERS
-// ---------------------------------------------------------
-function listFiles() {
-  function walk(dir) {
-    const entries = fs.readdirSync(dir, { withFileTypes: true });
-    for (const entry of entries) {
-      const fullPath = path.join(dir, entry.name);
-      const relPath = path.relative(projectRoot, fullPath);
-      if (entry.isDirectory()) {
-        if (["node_modules", "build", "bin"].includes(entry.name)) continue;
-        console.log(`[DIR]  ${relPath}`);
-        walk(fullPath);
-      } else {
-        console.log(`       ${relPath}`);
-      }
-    }
-  }
-
-  walk(projectRoot);
-}
-
-function readFile(relPath) {
-  const fullPath = path.join(projectRoot, relPath);
-  if (!fs.existsSync(fullPath)) {
-    console.log(`// ERROR: File not found: ${relPath}`);
-    return;
-  }
-  const content = fs.readFileSync(fullPath, "utf8");
-  console.log(`\n// FILE: ${relPath}\n`);
-  console.log(content);
-  console.log("\n// END OF FILE\n");
-}
-
-// ---------------------------------------------------------
-// TRANSFORM HELPERS
-// ---------------------------------------------------------
-async function transformFile(relPath, options = { writeBack: false }) {
-  const fullPath = path.join(projectRoot, relPath);
-  if (!fs.existsSync(fullPath)) {
-    console.log(`// ERROR: File not found: ${relPath}`);
-    return;
-  }
-  const content = fs.readFileSync(fullPath, "utf8");
-
-  const userPrompt = [
-    "TRANSFORM FILE",
-    `PATH: ${relPath}`,
-    "",
-    content
-  ].join("\n");
-
-  const messages = buildMessages(systemPrompt, userPrompt);
-
-  console.log(`\n--- Codexia Output (Transform: ${relPath}) ---\n`);
-  const output = await runCodexiaTransform(messages, { model: "primary" });
-  console.log(output);
-  console.log("\n---------------------------------------------\n");
-
-  if (options.writeBack) {
-    fs.writeFileSync(fullPath, output, "utf8");
-    console.log(`// WROTE: ${relPath}`);
-  }
-}
-
-// Transform all Swift-relevant files (you can refine this later)
-async function transformAll() {
-  const targets = [];
-
-  function walk(dir) {
-    const entries = fs.readdirSync(dir, { withFileTypes: true });
-    for (const entry of entries) {
-      const fullPath = path.join(dir, entry.name);
-      const relPath = path.relative(projectRoot, fullPath);
-      if (entry.isDirectory()) {
-        if (["node_modules", "build", "bin"].includes(entry.name)) continue;
-        walk(fullPath);
-      } else {
-        if (relPath.endsWith(".swift")) {
-          targets.push(relPath);
-        }
-      }
-    }
-  }
-
-  walk(projectRoot);
-
-  if (targets.length === 0) {
-    console.log("// No .swift files found to transform.");
-    return;
-  }
-
-  console.log(`// Transforming ${targets.length} Swift files...`);
-  for (const relPath of targets) {
-    await transformFile(relPath, { writeBack: true });
-  }
-  console.log("// Completed :xform-all");
-}
-
-// ---------------------------------------------------------
-// MULTI-FILE OUTPUT PARSING & APPLY
+// MULTI-FILE PATCH PARSER/APPLIER
 // ---------------------------------------------------------
 function parseMultiFileOutput(output) {
   const lines = output.split(/\r?\n/);
@@ -184,7 +69,7 @@ function parseMultiFileOutput(output) {
 
   const flush = () => {
     if (currentPath !== null) {
-      files[currentPath] = buffer.join("\n").trimEnd() + "\n";
+      files[currentPath] = buffer.join("\n").replace(/\s+$/g, "") + "\n";
     }
     currentPath = null;
     buffer = [];
@@ -197,10 +82,8 @@ function parseMultiFileOutput(output) {
     if (match) {
       flush();
       currentPath = match[1].trim();
-    } else {
-      if (currentPath !== null) {
-        buffer.push(line);
-      }
+    } else if (currentPath !== null) {
+      buffer.push(line);
     }
   }
   flush();
@@ -209,50 +92,121 @@ function parseMultiFileOutput(output) {
 }
 
 function applyFileMap(fileMap) {
-  const paths = Object.keys(fileMap);
-  if (paths.length === 0) {
-    console.log("// No files detected in Codexia output.");
+  const relPaths = Object.keys(fileMap);
+  if (relPaths.length === 0) {
+    console.log("// ❌ No patch blocks detected. Nothing applied.");
     return;
   }
 
-  for (const relPath of paths) {
+  for (const relPath of relPaths) {
     const fullPath = path.join(projectRoot, relPath);
     const dir = path.dirname(fullPath);
-    if (!fs.existsSync(dir)) {
-      fs.mkdirSync(dir, { recursive: true });
-    }
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
     fs.writeFileSync(fullPath, fileMap[relPath], "utf8");
-    console.log(`// WROTE: ${relPath}`);
+    console.log(`// ✅ WROTE: ${relPath}`);
   }
 }
 
 // ---------------------------------------------------------
-// CONTRACT COMMAND
+// FILE HELPERS
 // ---------------------------------------------------------
-async function runContract() {
-  if (!lastMultilinePrompt) {
-    console.log("// ERROR: No contract found. Use :ml to paste your contract first.");
+function listFiles() {
+  function walk(dir) {
+    const entries = fs.readdirSync(dir, { withFileTypes: true });
+    for (const entry of entries) {
+      const fullPath = path.join(dir, entry.name);
+      const relPath = path.relative(projectRoot, fullPath);
+      if (entry.isDirectory()) {
+        if (IGNORE_DIRS.has(entry.name)) continue;
+        console.log(`[DIR]  ${relPath}`);
+        walk(fullPath);
+      } else {
+        console.log(`       ${relPath}`);
+      }
+    }
+  }
+  walk(projectRoot);
+}
+
+function readFile(relPath) {
+  const fullPath = path.join(projectRoot, relPath);
+  if (!fs.existsSync(fullPath)) {
+    console.log(`// ❌ File not found: ${relPath}`);
+    return;
+  }
+  const content = fs.readFileSync(fullPath, "utf8");
+  console.log(`\n// FILE: ${relPath}\n`);
+  console.log(content);
+  console.log("\n// END OF FILE\n");
+}
+
+// ---------------------------------------------------------
+// GEMINI-STYLE ACTIONS
+// ---------------------------------------------------------
+async function askLLM(prompt, { selfModify = false } = {}) {
+  const systemPrompt = getSystemPrompt({ selfModify });
+  const messages = buildMessages(systemPrompt, prompt);
+  return await runCodexiaTransform(messages, { model: "primary" });
+}
+
+/**
+ * Transform a single file (read -> prompt -> print). Optional write-back.
+ */
+async function xformFile(relPath, { writeBack = false } = {}) {
+  const fullPath = path.join(projectRoot, relPath);
+  if (!fs.existsSync(fullPath)) {
+    console.log(`// ❌ File not found: ${relPath}`);
     return;
   }
 
-  const filesToInclude = [
-    "prompt/buildSystemPrompt.js",
-    "prompt/buildUserPrompt.js",
-    "codexia-rules.json"
-  ];
+  const content = fs.readFileSync(fullPath, "utf8");
+  const userPrompt = [
+    "TRANSFORM THIS FILE ONLY.",
+    `PATH: ${relPath}`,
+    "",
+    content
+  ].join("\n");
 
-  let bundle = [];
-  bundle.push("APPLY CONTRACT TO CODEXIA PROMPT AND RULE FILES.");
-  bundle.push("");
-  bundle.push("CONTRACT:");
-  bundle.push(lastMultilinePrompt);
-  bundle.push("");
-  bundle.push("CURRENT FILES:");
+  const out = await askLLM(userPrompt);
 
-  for (const relPath of filesToInclude) {
+  console.log(`\n--- Codexia Output (xform: ${relPath}) ---\n`);
+  console.log(out);
+  console.log("\n-----------------------------------------\n");
+
+  if (writeBack) {
+    fs.writeFileSync(fullPath, out, "utf8");
+    console.log(`// ✅ WROTE: ${relPath}`);
+  }
+}
+
+/**
+ * Apply a STRICT PATCH (multi-file) to disk.
+ * This is the Gemini-style “here’s a patch, apply it” workflow.
+ */
+async function patchApply(intent, allowedFiles) {
+  const bundle = [];
+  bundle.push("YOU ARE A DETERMINISTIC CODE PATCH ENGINE.");
+  bundle.push("ABSOLUTE RULES:");
+  bundle.push("- OUTPUT MUST CONTAIN ONLY FILE PATCH BLOCKS.");
+  bundle.push("- NO EXPLANATIONS. NO MARKDOWN. NO CHAT.");
+  bundle.push("- FULL FILE REWRITES ONLY.");
+  bundle.push("- ONLY MODIFY FILES PROVIDED BELOW.");
+  bundle.push("- FORMAT:");
+  bundle.push("=== FILE: relative/path ===");
+  bundle.push("<full file content>");
+  bundle.push("");
+  bundle.push("INTENT:");
+  bundle.push(intent);
+  bundle.push("");
+  bundle.push("=== FILES YOU ARE ALLOWED TO MODIFY ===");
+  bundle.push("");
+
+  for (const relPath of allowedFiles) {
     const fullPath = path.join(projectRoot, relPath);
     if (!fs.existsSync(fullPath)) {
-      bundle.push(`// MISSING FILE: ${relPath}`);
+      bundle.push(`=== FILE: ${relPath} ===`);
+      bundle.push(`// MISSING: ${relPath}`);
+      bundle.push("");
       continue;
     }
     const content = fs.readFileSync(fullPath, "utf8");
@@ -261,29 +215,49 @@ async function runContract() {
     bundle.push("");
   }
 
-  const userPrompt = bundle.join("\n");
-  const messages = buildMessages(systemPrompt, userPrompt);
+  bundle.push("=== END OF FILE SET ===");
 
-  console.log("\n--- Codexia Output (Contract Rewrite) ---\n");
-  const output = await runCodexiaTransform(messages, { model: "primary" });
-  console.log(output);
-  console.log("\n----------------------------------------\n");
+  const out = await askLLM(bundle.join("\n"), { selfModify: true });
 
-  const fileMap = parseMultiFileOutput(output);
-  lastMultiFileOutput = fileMap;
+  if (!out || !out.includes("=== FILE:")) {
+    console.log("// ❌ Invalid patch output (no file blocks). Nothing applied.");
+    console.log("\n--- Raw Output ---\n");
+    console.log(out || "");
+    console.log("\n------------------\n");
+    return;
+  }
 
+  const fileMap = parseMultiFileOutput(out);
   applyFileMap(fileMap);
 }
 
 // ---------------------------------------------------------
-// APPLY LAST MULTI-FILE OUTPUT
+// HELP
 // ---------------------------------------------------------
-function applyLastOutput() {
-  if (!lastMultiFileOutput) {
-    console.log("// ERROR: No previous multi-file output to apply.");
-    return;
-  }
-  applyFileMap(lastMultiFileOutput);
+function printHelp() {
+  console.log(`
+Codexia (Gemini-style) Commands:
+
+  :help                 Show help
+  :context on|off        Toggle project context scan (default: off)
+
+  :files                List files
+  :read <path>           Print a file
+
+  :xform <path>          Transform ONE file (prints output)
+  :xformw <path>         Transform ONE file and write back
+
+  :patch <intent> --files a,b,c
+                        Run self-modifying STRICT PATCH mode on only those files
+                        Example:
+                        :patch "fix parse bug" --files utils/multiFileOrchestrator.js,validator/codexiaValidator.js
+
+  :quit / :exit          Exit
+
+Gemini-style behavior:
+- Any line that does NOT start with ":" is sent as a single prompt to the model.
+- Nothing is written to disk unless you use :xformw or :patch.
+`);
 }
 
 // ---------------------------------------------------------
@@ -295,100 +269,108 @@ const rl = readline.createInterface({
   prompt: "Codexia> "
 });
 
-console.log("Codexia Shell Loaded");
+console.log("Codexia Gemini-style Shell Loaded");
 printHelp();
 rl.prompt();
 
 rl.on("line", async (line) => {
   const trimmed = line.trim();
 
-  // Multiline mode handling
-  if (mode === "multiline") {
-    if (trimmed === ":end") {
-      const userPrompt = multilineBuffer.join("\n");
-      multilineBuffer = [];
-      mode = "normal";
-      lastMultilinePrompt = userPrompt;
-
-      const messages = buildMessages(systemPrompt, userPrompt);
-      console.log("\n--- Codexia Output ---\n");
-      const output = await runCodexiaTransform(messages, { model: "primary" });
-      console.log(output);
-      console.log("\n----------------------\n");
+  try {
+    if (!trimmed) {
       rl.prompt();
       return;
-    } else {
-      multilineBuffer.push(line);
-      return;
     }
-  }
 
-  // Normal mode: commands start with ":"
-  if (trimmed.startsWith(":")) {
-    const [cmd, ...args] = trimmed.slice(1).split(/\s+/);
+    if (trimmed.startsWith(":")) {
+      const rest = trimmed.slice(1);
+      const [cmd, ...parts] = rest.split(" ");
+      const args = parts.join(" ").trim();
 
-    switch (cmd) {
-      case "help":
+      if (cmd === "help") {
         printHelp();
-        break;
-      case "files":
+        rl.prompt();
+        return;
+      }
+
+      if (cmd === "context") {
+        const v = (args || "").toLowerCase();
+        if (v === "on") contextEnabled = true;
+        else if (v === "off") contextEnabled = false;
+        else console.log("// Usage: :context on|off");
+        console.log(`// context = ${contextEnabled ? "ON" : "OFF"}`);
+        rl.prompt();
+        return;
+      }
+
+      if (cmd === "files") {
         listFiles();
-        break;
-      case "read":
-        if (args.length === 0) {
-          console.log("// Usage: :read <relative/path>");
-        } else {
-          readFile(args.join(" "));
+        rl.prompt();
+        return;
+      }
+
+      if (cmd === "read") {
+        if (!args) console.log("// Usage: :read <relative/path>");
+        else readFile(args);
+        rl.prompt();
+        return;
+      }
+
+      if (cmd === "xform" || cmd === "xformw") {
+        if (!args) console.log(`// Usage: :${cmd} <relative/path>`);
+        else await xformFile(args, { writeBack: cmd === "xformw" });
+        rl.prompt();
+        return;
+      }
+
+      if (cmd === "patch") {
+        // Parse: :patch "<intent>" --files a,b,c
+        const filesFlag = args.match(/--files\s+(.+)$/);
+        if (!filesFlag) {
+          console.log("// Usage: :patch \"<intent>\" --files a,b,c");
+          rl.prompt();
+          return;
         }
-        break;
-      case "ml":
-        mode = "multiline";
-        multilineBuffer = [];
-        console.log("// Multiline mode: paste your text, then type :end on its own line.");
-        break;
-      case "xform":
-        if (args.length === 0) {
-          console.log("// Usage: :xform <relative/path>");
-        } else {
-          await transformFile(args.join(" "), { writeBack: false });
+        const filesCsv = filesFlag[1].trim();
+        const intent = args.replace(filesFlag[0], "").trim().replace(/^"(.*)"$/, "$1");
+        const allowedFiles = filesCsv.split(",").map(s => s.trim()).filter(Boolean);
+
+        if (!intent) {
+          console.log("// Missing intent. Example: :patch \"fix bug\" --files utils/multiFileOrchestrator.js");
+          rl.prompt();
+          return;
         }
-        break;
-      case "xform-all":
-        await transformAll();
-        break;
-      case "contract":
-        await runContract();
-        break;
-      case "apply":
-        applyLastOutput();
-        break;
-      case "quit":
-      case "exit":
+        if (allowedFiles.length === 0) {
+          console.log("// Missing files list. Example: --files utils/multiFileOrchestrator.js");
+          rl.prompt();
+          return;
+        }
+
+        await patchApply(intent, allowedFiles);
+        rl.prompt();
+        return;
+      }
+
+      if (cmd === "quit" || cmd === "exit") {
         rl.close();
         return;
-      default:
-        console.log(`// Unknown command: :${cmd}`);
-        printHelp();
-        break;
+      }
+
+      console.log(`// Unknown command: :${cmd}`);
+      printHelp();
+      rl.prompt();
+      return;
     }
 
-    rl.prompt();
-    return;
+    // Gemini-style: send the single prompt, do not write to disk
+    const out = await askLLM(trimmed);
+    console.log("\n--- Codexia Output ---\n");
+    console.log(out);
+    console.log("\n----------------------\n");
+  } catch (err) {
+    console.error("❌ Error:", err && err.stack ? err.stack : err);
   }
 
-  // Normal single-line prompt → direct Codexia call
-  if (trimmed.length === 0) {
-    rl.prompt();
-    return;
-  }
-
-  const userPrompt = trimmed;
-  const messages = buildMessages(systemPrompt, userPrompt);
-
-  console.log("\n--- Codexia Output ---\n");
-  const output = await runCodexiaTransform(messages, { model: "primary" });
-  console.log(output);
-  console.log("\n----------------------\n");
   rl.prompt();
 });
 
